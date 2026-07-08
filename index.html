@@ -473,10 +473,18 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&am
 function daysUntil(iso){ const d=parseISO(iso); const t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/86400000); }
 
 function toast(msg, kind){
-  const el=document.createElement('div'); el.className='toast'; el.textContent=msg;
-  if(kind==='danger') el.style.background='var(--danger)';
-  document.getElementById('toastWrap').appendChild(el);
-  setTimeout(()=>el.remove(), 3200);
+  const el=document.createElement('div'); el.className='toast'; el.style.maxWidth='420px'; el.style.wordBreak='break-word';
+  if(kind==='danger'){
+    el.style.background='var(--danger)';
+    el.style.display='flex'; el.style.alignItems='flex-start'; el.style.gap='10px';
+    el.innerHTML = `<span style="flex:1;">${esc(msg)}</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:#fff;font-size:15px;cursor:pointer;line-height:1;">✕</button>`;
+    document.getElementById('toastWrap').appendChild(el);
+    // erros ficam na tela ate o usuario fechar manualmente
+  } else {
+    el.textContent = msg;
+    document.getElementById('toastWrap').appendChild(el);
+    setTimeout(()=>el.remove(), 3200);
+  }
 }
 
 /* ============================ SHELL / RENDER ============================ */
