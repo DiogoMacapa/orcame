@@ -338,13 +338,21 @@ async function sbRequest(method, table, opts={}){
 }
 
 /* ---- Field mapping: JS (camelCase) <-> Supabase columns (snake_case) ---- */
+function validSqlDate(v){
+  if(!v || typeof v!=='string') return null;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  const mm = parseInt(m[2]), dd = parseInt(m[3]);
+  if(mm<1||mm>12||dd<1||dd>31) return null;
+  return v;
+}
 const toDbRow = {
   tx: t => ({
     id:t.id, type:t.type, description:t.description, category:t.category||null, amount:Number(t.amount)||0,
-    date:t.date||null, status:t.status||null, payment_method:t.paymentMethod||null, card_id:t.cardId||null,
+    date:validSqlDate(t.date), status:t.status||null, payment_method:t.paymentMethod||null, card_id:t.cardId||null,
     installment_current: (t.installmentCurrent===''||t.installmentCurrent==null)?null:Number(t.installmentCurrent),
     installment_total: (t.installmentTotal===''||t.installmentTotal==null)?null:Number(t.installmentTotal),
-    invoice_month:t.invoiceMonth||null, recurring:!!t.recurring, due_date:t.dueDate||null, notes:t.notes||null,
+    invoice_month:t.invoiceMonth||null, recurring:!!t.recurring, due_date:validSqlDate(t.dueDate), notes:t.notes||null,
     tax_percent:(t.taxPercent===''||t.taxPercent==null)?null:Number(t.taxPercent),
     repasse_amount:(t.repasseAmount===''||t.repasseAmount==null)?null:Number(t.repasseAmount),
   }),
