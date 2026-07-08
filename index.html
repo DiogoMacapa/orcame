@@ -289,7 +289,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.08-save-error-visible';
+const APP_VERSION = '2026.07.08-date-fix';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[] };
 let state = {
   page:'painel',
@@ -1726,7 +1726,9 @@ function parsePdfText(text){
     if(/total|subtotal|saldo\s*anterior|limite\s*dispon|pagamento\s*m[ií]nimo/i.test(desc)) return;
 
     const year = dm[3] ? (dm[3].length===2 ? 2000+parseInt(dm[3]) : parseInt(dm[3])) : refYear;
-    const date = year+'-'+dm[1]+'-'+dm[2];
+    const dayNum = parseInt(dm[1]), monthNum = parseInt(dm[2]);
+    if(monthNum<1 || monthNum>12 || dayNum<1 || dayNum>31) return; // data invalida, ignora a linha
+    const date = year+'-'+dm[2]+'-'+dm[1];
 
     let amount = vm[1].replace(/\./g,'').replace(',','.');
     amount = parseFloat(amount);
