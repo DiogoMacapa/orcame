@@ -281,6 +281,7 @@ const DEFAULT_CATS = [
   {id:'c-servicos', type:'despesa', name:'Serviços', icon:'🔧'},
   {id:'c-eletronicos', type:'despesa', name:'Eletrônicos', icon:'🖥️'},
   {id:'c-outros-d', type:'despesa', name:'Outros', icon:'📦'},
+  {id:'c-marketplace', type:'despesa', name:'Marketplace', icon:'🛒'},
   {id:'c-estornos-d', type:'despesa', name:'Estornos/Créditos', icon:'🔄'},
   {id:'c-salario', type:'receita', name:'Salário', icon:'💼'},
   {id:'c-opcoes', type:'receita', name:'Opções', icon:'📈'},
@@ -432,6 +433,18 @@ async function loadAll(){
     DEFAULT_CATS.forEach(dc=>{ if(!DB.cats.find(c=>c.id===dc.id)){ DB.cats.push(dc); added=true; } });
     if(added) await persist('cats');
   }
+  // reclassificacao unica: lojas de marketplace que ficaram em "Outros" antes dessa categoria existir
+  if(!localStorage.getItem('orcame:reclass-marketplace-done')){
+    let reclassified = false;
+    DB.tx.forEach(t=>{
+      if(t.type==='despesa' && t.category==='c-outros-d' && /mercado\s*livre|mercadolivre|amazon|shopee|shein|aliexpress|magazine\s*luiza|magalu/i.test(t.description||'')){
+        t.category = 'c-marketplace';
+        reclassified = true;
+      }
+    });
+    if(reclassified) await persist('tx');
+    try{ localStorage.setItem('orcame:reclass-marketplace-done','1'); }catch(_){}
+  }
 }
 
 async function persist(key){
@@ -473,6 +486,14 @@ function fmtDateShort(iso){ if(!iso) return '—'; const d=parseISO(iso); return
 function fmtDateFull(iso){ if(!iso) return '—'; const d=parseISO(iso); return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
 function monthLabel(d){ return MONTHS_PT[d.getMonth()].charAt(0).toUpperCase()+MONTHS_PT[d.getMonth()].slice(1)+' de '+d.getFullYear(); }
 function sameMonth(iso, d){ if(!iso) return false; const t=parseISO(iso); return t.getFullYear()===d.getFullYear() && t.getMonth()===d.getMonth(); }
+function txMonthKey(t){
+  if(t.paymentMethod==='cartao' && t.invoiceMonth) return t.invoiceMonth;
+  return (t.date||'').slice(0,7);
+}
+function inSelectedMonth(t, monthDate){
+  const mk = monthDate.getFullYear()+'-'+String(monthDate.getMonth()+1).padStart(2,'0');
+  return txMonthKey(t) === mk;
+}
 function catById(id){ return DB.cats.find(c=>c.id===id); }
 function cardById(id){ return DB.cards.find(c=>c.id===id); }
 function catsFor(type){ return DB.cats.filter(c=>c.type===type); }
@@ -558,7 +579,7 @@ function shiftMonth(d){ state.month = new Date(state.month.getFullYear(), state.
 /* ============================ PAINEL ============================ */
 function pagePainel(){
   const m = state.month;
-  const txMes = DB.tx.filter(t=>sameMonth(t.date, m));
+  const txMes = DB.tx.filter(t=>inSelectedMonth(t, m));
   const receitas = txMes.filter(t=>t.type==='receita');
   const despesas = txMes.filter(t=>t.type==='despesa');
   const totalReceitas = receitas.reduce((s,t)=>s+t.amount,0);
@@ -599,8 +620,8 @@ function pagePainel(){
   const evo = [];
   for(let i=5;i>=0;i--){
     const d = new Date(m.getFullYear(), m.getMonth()-i, 1);
-    const r = DB.tx.filter(t=>t.type==='receita'&&sameMonth(t.date,d)).reduce((s,t)=>s+t.amount,0);
-    const de = DB.tx.filter(t=>t.type==='despesa'&&sameMonth(t.date,d)).reduce((s,t)=>s+t.amount,0);
+    const r = DB.tx.filter(t=>t.type==='receita'&&inSelectedMonth(t,d)).reduce((s,t)=>s+t.amount,0);
+    const de = DB.tx.filter(t=>t.type==='despesa'&&inSelectedMonth(t,d)).reduce((s,t)=>s+t.amount,0);
     evo.push({label:MONTHS_SHORT[d.getMonth()]+' de '+String(d.getFullYear()).slice(2), r, de});
   }
   window._evoData = evo;
@@ -817,7 +838,7 @@ function pageCartoes(){
         const debtTotal = Math.max(0, debtGross - creditsAll);
         const invoiceTx = DB.tx.filter(t=>t.type==='despesa'&&t.paymentMethod==='cartao'&&t.cardId===c.id&&(t.invoiceMonth||t.date.slice(0,7))===mk);
         const faturaGross = invoiceTx.reduce((s,t)=>s+t.amount,0);
-        const creditsMes = DB.tx.filter(t=>t.type==='receita'&&t.cardId===c.id&&sameMonth(t.date,state.month)).reduce((s,t)=>s+t.amount,0);
+        const creditsMes = DB.tx.filter(t=>t.type==='receita'&&t.cardId===c.id&&inSelectedMonth(t,state.month)).reduce((s,t)=>s+t.amount,0);
         const faturaMes = faturaGross - creditsMes;
         const compras = invoiceTx.length;
         const colorClass = (CARD_COLORS.find(x=>x.k===c.color)||CARD_COLORS[0]).c;
@@ -832,9 +853,10 @@ function pageCartoes(){
               <div>Fatura de ${MONTHS_SHORT[state.month.getMonth()]}<b>${fmtBRL(faturaMes)}</b>${creditsMes>0?`<span style="display:block;font-size:10px;color:var(--primary-dark);font-weight:600;">− ${fmtBRL(creditsMes)} em créditos</span>`:''}</div>
               <div>Compras<b>${compras}</b></div>
             </div>
-            <div class="card-actions-row" style="padding:0 14px 12px;">
+            <div class="card-actions-row" style="padding:0 14px 12px; flex-wrap:wrap;">
               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); openCardModal('${c.id}')">✎ Editar</button>
               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); deleteCard('${c.id}')">🗑</button>
+              <button class="btn btn-sm btn-danger-ghost" onclick="event.stopPropagation(); deleteInvoiceMonth('${c.id}')">🗑 Excluir fatura de ${MONTHS_SHORT[state.month.getMonth()]}</button>
               <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openCardDetail('${c.id}')">Ver detalhes ›</button>
             </div>
           </div>
@@ -950,7 +972,7 @@ function pageCategorias(){
     </div>
     <div class="cat-grid">
       ${list.map(c=>{
-        const total = DB.tx.filter(t=>t.category===c.id && sameMonth(t.date,state.month)).reduce((s,t)=>s+t.amount,0);
+        const total = DB.tx.filter(t=>t.category===c.id && inSelectedMonth(t,state.month)).reduce((s,t)=>s+t.amount,0);
         return `<div class="cat-tile">
           <div class="ic">${c.icon}</div>
           <div style="flex:1"><div class="nm">${esc(c.name)}</div><div style="font-size:11.5px;color:var(--text-faint)">${total>0?fmtBRL(total)+' este mês':'sem uso este mês'}</div></div>
@@ -1404,6 +1426,16 @@ function saveCard(){
   if(idx>=0) DB.cards[idx]=obj; else DB.cards.push(obj);
   persist('cards').then(()=>{ closeModal(); toast('Cartão salvo'); renderPage(); });
 }
+function deleteInvoiceMonth(cardId){
+  const mk = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0');
+  const toDelete = DB.tx.filter(t=>t.cardId===cardId && t.paymentMethod==='cartao' && inSelectedMonth(t,state.month));
+  if(toDelete.length===0){ toast('Nenhum lançamento encontrado nessa fatura'); return; }
+  confirmAction(`Excluir ${toDelete.length} lançamento(s) da fatura de ${MONTHS_SHORT[state.month.getMonth()]} de ${state.month.getFullYear()} deste cartão? Essa ação não pode ser desfeita.`, ()=>{
+    const idsToDelete = new Set(toDelete.map(t=>t.id));
+    DB.tx = DB.tx.filter(t=>!idsToDelete.has(t.id));
+    persist('tx').then(()=>{ closeModal(); toast(toDelete.length+' lançamento(s) excluído(s)'); renderPage(); });
+  });
+}
 function deleteCard(id){
   confirmAction('Excluir este cartão? As transações associadas continuarão registradas, mas sem cartão vinculado.', ()=>{
     DB.cards = DB.cards.filter(c=>c.id!==id);
@@ -1560,7 +1592,7 @@ function deleteGoal(id){
 
 /* ============================ IMPORTAÇÃO DE PDF ============================ */
 const MERCHANT_HINTS = [
-  {re:/mercado\s*livre|mercadolivre/i, cat:'c-outros-d'},
+  {re:/mercado\s*livre|mercadolivre/i, cat:'c-marketplace'},
   {re:/ifood|rappi|uber\s*eats/i, cat:'c-alimentacao'},
   {re:/uber(?!\s*eats)|99app|99pop|taxi/i, cat:'c-transporte'},
   {re:/farma|drogaria|drogasil|panvel/i, cat:'c-saude'},
@@ -1568,7 +1600,7 @@ const MERCHANT_HINTS = [
   {re:/posto|shell|ipiranga|combust/i, cat:'c-transporte'},
   {re:/mercado(?!\s*livre)|supermercado|carrefour|paodeacucar|assai/i, cat:'c-alimentacao'},
   {re:/academia|smart\s*fit/i, cat:'c-saude'},
-  {re:/amazon|shopee|shein|aliexpress/i, cat:'c-outros-d'},
+  {re:/amazon|shopee|shein|aliexpress|magazine\s*luiza|magalu/i, cat:'c-marketplace'},
 ];
 function guessCategory(desc){
   const hit = MERCHANT_HINTS.find(h=>h.re.test(desc));
