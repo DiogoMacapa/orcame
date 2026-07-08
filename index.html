@@ -433,17 +433,17 @@ async function loadAll(){
     DEFAULT_CATS.forEach(dc=>{ if(!DB.cats.find(c=>c.id===dc.id)){ DB.cats.push(dc); added=true; } });
     if(added) await persist('cats');
   }
-  // reclassificacao unica: lojas de marketplace que ficaram em "Outros" antes dessa categoria existir
-  if(!localStorage.getItem('orcame:reclass-marketplace-done')){
+  // reclassificacao automatica: lojas conhecidas que ficaram em "Outros" antes das regras existirem
+  if(!localStorage.getItem('orcame:reclass-v2-done')){
     let reclassified = false;
     DB.tx.forEach(t=>{
-      if(t.type==='despesa' && t.category==='c-outros-d' && /mercado\s*livre|mercadolivre|amazon|shopee|shein|aliexpress|magazine\s*luiza|magalu/i.test(t.description||'')){
-        t.category = 'c-marketplace';
-        reclassified = true;
+      if(t.type==='despesa' && t.category==='c-outros-d'){
+        const guessed = guessCategory(t.description||'');
+        if(guessed !== 'c-outros-d'){ t.category = guessed; reclassified = true; }
       }
     });
     if(reclassified) await persist('tx');
-    try{ localStorage.setItem('orcame:reclass-marketplace-done','1'); }catch(_){}
+    try{ localStorage.setItem('orcame:reclass-v2-done','1'); }catch(_){}
   }
 }
 
@@ -1618,13 +1618,15 @@ function deleteGoal(id){
 const MERCHANT_HINTS = [
   {re:/mercado\s*livre|mercadolivre/i, cat:'c-marketplace'},
   {re:/ifood|rappi|uber\s*eats/i, cat:'c-alimentacao'},
-  {re:/uber(?!\s*eats)|99app|99pop|taxi/i, cat:'c-transporte'},
+  {re:/uber(?!\s*eats)|99app|99pop|taxi|zul\s*digital|metro(?!\s*livre)/i, cat:'c-transporte'},
   {re:/farma|drogaria|drogasil|panvel/i, cat:'c-saude'},
   {re:/netflix|spotify|hbo|disney|amazon\s*prime|youtube/i, cat:'c-lazer'},
   {re:/posto|shell|ipiranga|combust/i, cat:'c-transporte'},
   {re:/mercado(?!\s*livre)|supermercado|carrefour|paodeacucar|assai/i, cat:'c-alimentacao'},
   {re:/academia|smart\s*fit/i, cat:'c-saude'},
-  {re:/amazon|shopee|shein|aliexpress|magazine\s*luiza|magalu/i, cat:'c-marketplace'},
+  {re:/amazon|shopee|shein|aliexpress|magazine\s*luiza|magalu|temu/i, cat:'c-marketplace'},
+  {re:/contabilizei|grana\s*capital|kaspersky|tecmilhas\s*solucoes/i, cat:'c-servicos'},
+  {re:/distribuidora\s*j\s*n|havan/i, cat:'c-vestuario'},
 ];
 function guessCategory(desc){
   const hit = MERCHANT_HINTS.find(h=>h.re.test(desc));
