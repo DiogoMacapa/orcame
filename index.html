@@ -598,6 +598,13 @@ function pagePainel(){
   despesas.filter(t=>t.amount>0 && t.paymentMethod==='cartao' && t.cardId).forEach(t=>{ byCard[t.cardId]=(byCard[t.cardId]||0)+t.amount; });
   const cardEntries = Object.entries(byCard).sort((a,b)=>b[1]-a[1]);
 
+  // estabelecimentos nos cartoes, combinando todos os cartoes juntos
+  const byEstCard = {};
+  const despesasCartao = despesas.filter(t=>t.amount>0 && t.paymentMethod==='cartao');
+  const totalDespesasCartao = despesasCartao.reduce((s,t)=>s+t.amount,0);
+  despesasCartao.forEach(t=>{ byEstCard[t.description] = (byEstCard[t.description]||0)+t.amount; });
+  const estCardEntries = Object.entries(byEstCard).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
   // receitas por categoria
   const byCatR = {};
   receitas.filter(t=>t.amount>0).forEach(t=>{ byCatR[t.category] = (byCatR[t.category]||0)+t.amount; });
@@ -661,10 +668,19 @@ function pagePainel(){
           <div class="donut-wrap" id="chartCard" style="width:150px;height:150px;flex-shrink:0;position:relative;"></div>
           <div style="flex:1; min-width:0;">
             ${cardEntries.map(([cid,val])=>{ const c=cardById(cid); const total=cardEntries.reduce((s,e)=>s+e[1],0); const pct=total?(val/total*100):0; const color=PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length];
-              return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?esc(c.name):'—'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+              return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?esc(c.name):'—'}</span><span class="legend-pct" style="font-weight:700; font-size:14px; color:var(--text);">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
           </div>
         </div>`}
       </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="section-title"><h3>Estabelecimentos nos Cartões (BTG + Revolut juntos)</h3><span class="meta">soma de todos os cartões, no mês</span></div>
+      ${estCardEntries.length===0? emptyState('🛒','Nenhum gasto no cartão neste mês','Quando você importar faturas, aqui aparece cada loja somando os dois cartões — ex: Shopee usado no BTG e no Revolut vira um total só.') : `
+      <div class="grid g3" style="gap:8px;">
+      ${estCardEntries.map(([name,val])=>{ const pct = totalDespesasCartao? (val/totalDespesasCartao*100):0;
+        return `<div class="legend-row"><span class="legend-name">${esc(name)}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+      </div>`}
     </div>
 
     <div class="grid g2" style="margin-bottom:16px;">
@@ -774,6 +790,7 @@ function pageTransacoes(){
     ${list.length>0? `<div style="display:flex; gap:8px; margin-bottom:12px;">
       <button class="btn btn-sm btn-outline" onclick="bulkMarkPaid()">✓ Marcar estas ${list.length} como pagas</button>
       <button class="btn btn-sm btn-outline" onclick="bulkSetInvoiceMonth()">📅 Definir mês de fatura destas ${list.length}</button>
+      <button class="btn btn-sm btn-danger-ghost" onclick="bulkDelete()">🗑 Excluir estas ${list.length}</button>
     </div>` : ''}
     <div class="card card-pad">
       ${list.length===0? emptyState('🧾','Nenhuma transação encontrada','Ajuste os filtros ou lance uma nova transação.') : list.map(t=>txRow(t)).join('')}
@@ -790,6 +807,13 @@ function currentTxFilterIds(){
     list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
   }
   return list.map(t=>t.id);
+}
+function bulkDelete(){
+  const ids = currentTxFilterIds();
+  confirmAction(`Excluir ${ids.length} transação(ões) filtrada(s)? Essa ação não pode ser desfeita.`, ()=>{
+    DB.tx = DB.tx.filter(t=>!ids.includes(t.id));
+    persist('tx').then(()=>{ toast(ids.length+' transação(ões) excluída(s)'); renderPage(); });
+  });
 }
 function bulkMarkPaid(){
   const ids = currentTxFilterIds();
