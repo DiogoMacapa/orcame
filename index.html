@@ -289,7 +289,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.06-supabase-noheaders';
+const APP_VERSION = '2026.07.08-save-error-visible';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[] };
 let state = {
   page:'painel',
@@ -443,7 +443,9 @@ async function persist(key){
     }catch(e){
       console.error('Falha ao salvar '+key+' no Supabase:', e);
       window._lastSupaError = (e && e.message) || String(e);
-      toast('Não foi possível salvar na nuvem — usando armazenamento local do navegador.','danger');
+      usingFallbackStorage = true;
+      toast('Erro ao salvar na nuvem: '+window._lastSupaError, 'danger');
+      if(document.querySelector('.sidebar-foot')) render();
     }
   }
   try{ localStorage.setItem('orcame:'+key, JSON.stringify(DB[key])); }catch(e){ toast('Não foi possível salvar os dados','danger'); }
