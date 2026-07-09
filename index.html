@@ -476,6 +476,17 @@ async function persist(key){
   return false;
 }
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+function exportBackup(){
+  const backup = { exportedAt: new Date().toISOString(), version: APP_VERSION, data: DB };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'orcame-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('Backup baixado');
+}
 
 /* ============================ HELPERS ============================ */
 const PALETTE = ['#0EA972','#3B7CE0','#F0A833','#E4483A','#7C6CF0','#F0721F','#14B8A6','#EC4899','#84CC16','#64748B','#0B8B5D','#2A5CB0'];
@@ -541,7 +552,7 @@ function render(){
       <div class="nav">
         ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}')"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
       </div>
-      <div class="sidebar-foot"><div class="hint">${supa && !usingFallbackStorage ? '🟢 Conectado ao Supabase' : '🟡 Salvando localmente neste navegador'}</div>${(usingFallbackStorage && window._lastSupaError) ? `<div class="hint" style="margin-top:6px; color:var(--danger); word-break:break-word;">Erro: ${esc(window._lastSupaError)}</div>` : ''}<div class="hint" style="margin-top:6px; font-family:var(--mono); color:var(--text-faint);">build ${APP_VERSION}</div></div>
+      <div class="sidebar-foot"><div class="hint">${supa && !usingFallbackStorage ? '🟢 Conectado ao Supabase' : '🟡 Salvando localmente neste navegador'}</div>${(usingFallbackStorage && window._lastSupaError) ? `<div class="hint" style="margin-top:6px; color:var(--danger); word-break:break-word;">Erro: ${esc(window._lastSupaError)}</div>` : ''}<button class="btn btn-sm btn-outline" style="width:100%; margin-top:8px; justify-content:center;" onclick="exportBackup()">⬇️ Baixar backup</button><div class="hint" style="margin-top:6px; font-family:var(--mono); color:var(--text-faint);">build ${APP_VERSION}</div></div>
     </div>
     <div class="main">
       <div class="topbar">
@@ -1735,7 +1746,8 @@ function learnMerchantRule(description, category, type){
 
 function openImportModal(){
   state.importStep = 0; state.importRows = []; state.importRawText = '';
-  state.importCardId = DB.cards[0]?.id || null;
+  const contextCard = (state.txFilterCard && state.txFilterCard!=='todos') ? state.txFilterCard : null;
+  state.importCardId = contextCard || DB.cards[0]?.id || null;
   state.importTab = 'texto';
   state.importInvoiceMonth = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0');
   state.importStatus = 'pendente';
