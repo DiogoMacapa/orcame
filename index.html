@@ -476,6 +476,63 @@ async function persist(key){
   return false;
 }
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+function getAlerts(){
+  const alerts = [];
+  DB.tx.filter(t=>t.type==='despesa' && t.status==='pendente' && t.dueDate && t.amount>0).forEach(t=>{
+    const d = daysUntil(t.dueDate);
+    if(d<0) alerts.push({kind:'atrasado', label:t.description, sub:'Venceu há '+Math.abs(d)+' dia(s)', value:t.amount, urgency:0});
+    else if(d<=7) alerts.push({kind:'vencendo', label:t.description, sub: d===0?'Vence hoje':'Vence em '+d+' dia(s)', value:t.amount, urgency:d});
+  });
+  DB.cards.forEach(c=>{
+    if(!c.dueDay) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    let due = new Date(today.getFullYear(), today.getMonth(), c.dueDay);
+    if(due < today) due = new Date(today.getFullYear(), today.getMonth()+1, c.dueDay);
+    const d = Math.round((due-today)/86400000);
+    if(d<=7){
+      const debtGross = DB.tx.filter(t=>t.type==='despesa'&&t.paymentMethod==='cartao'&&t.cardId===c.id&&t.status==='pendente').reduce((s,t)=>s+t.amount,0);
+      const creditsAll = DB.tx.filter(t=>t.type==='receita'&&t.cardId===c.id).reduce((s,t)=>s+t.amount,0);
+      const debt = Math.max(0, debtGross-creditsAll);
+      if(debt>0) alerts.push({kind:'vencendo', label:'Fatura '+c.name, sub: d===0?'Vence hoje':'Vence em '+d+' dia(s)', value:debt, urgency:d});
+    }
+  });
+  alerts.sort((a,b)=> (a.kind==='atrasado'?-1:0) - (b.kind==='atrasado'?-1:0) || a.urgency-b.urgency);
+  return alerts;
+}
+function toggleAlertsPanel(ev){
+  ev.stopPropagation();
+  const existing = document.getElementById('alertsPanel');
+  if(existing){ existing.remove(); return; }
+  const alerts = getAlerts();
+  const panel = document.createElement('div');
+  panel.id = 'alertsPanel';
+  panel.style.cssText = 'position:absolute; top:56px; right:28px; width:320px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-md); z-index:150; max-height:420px; overflow:auto;';
+  panel.innerHTML = `
+    <div style="padding:14px 16px; border-bottom:1px solid var(--border); font-weight:700; font-size:13.5px;">Vencimentos</div>
+    ${alerts.length===0? `<div style="padding:24px 16px; text-align:center; color:var(--text-faint); font-size:12.5px;">Nenhum vencimento próximo ou atrasado 🎉</div>` :
+      alerts.map(a=>`<div style="padding:11px 16px; border-bottom:1px solid var(--surface-2); display:flex; justify-content:space-between; gap:10px;">
+        <div><div style="font-weight:600; font-size:12.5px;">${esc(a.label)}</div><div style="font-size:11.5px; color:${a.kind==='atrasado'?'var(--danger)':'var(--warning)'};">${esc(a.sub)}</div></div>
+        <div style="font-family:var(--mono); font-size:12.5px; font-weight:600; white-space:nowrap;">${fmtBRL(a.value)}</div>
+      </div>`).join('')}
+  `;
+  document.body.appendChild(panel);
+  setTimeout(()=>{
+    document.addEventListener('click', function closeOnce(e){
+      if(!panel.contains(e.target)){ panel.remove(); document.removeEventListener('click', closeOnce); }
+    });
+  },0);
+}
+function checkAutoBackup(){
+  const today = new Date();
+  if(today.getDate() > 5) return; // so tenta nos primeiros dias do mes
+  const mk = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+  const last = localStorage.getItem('orcame:lastBackupMonth');
+  if(last === mk) return;
+  if(DB.tx.length===0 && DB.cards.length===0) return; // nada pra fazer backup ainda
+  exportBackup();
+  try{ localStorage.setItem('orcame:lastBackupMonth', mk); }catch(_){}
+  toast('Backup mensal automático baixado 📥');
+}
 function exportBackup(){
   const backup = { exportedAt: new Date().toISOString(), version: APP_VERSION, data: DB };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
@@ -558,7 +615,7 @@ function render(){
       <div class="topbar">
         <div class="searchbox">🔎<input id="globalSearch" placeholder="Buscar transações, cartões..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
         <div style="flex:1"></div>
-        <button class="icon-btn" title="Notificações">🔔${DB.tx.some(t=>t.status==='pendente' && t.dueDate && daysUntil(t.dueDate)<=3)?'<span class="dot-badge"></span>':''}</button>
+        <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
       </div>
       <div class="content" id="content"></div>
     </div>
@@ -962,6 +1019,8 @@ function pageCartoes(){
             <div class="digits">•••• ${esc(c.lastDigits||'0000')}</div>
           </div>
           <div class="card" style="border-top:none; border-top-left-radius:0; border-top-right-radius:0; margin-top:-1px;">
+            ${c.limit>0? (()=>{ const pct=Math.min(100,(debtTotal/c.limit*100)); const color=pct<60?'var(--primary)':pct<85?'var(--warning)':'var(--danger)';
+              return `<div style="padding:12px 16px 0;"><div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-bottom:5px;"><span>Limite usado</span><span>${pct.toFixed(0)}% de ${fmtBRL(c.limit)}</span></div><div class="progress-track"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div></div>`; })() : ''}
             <div class="ccard-foot" style="padding:12px 16px;">
               <div>Dívida Atual<b class="down">${fmtBRL(debtTotal)}</b></div>
               <div>Fatura de ${MONTHS_SHORT[state.month.getMonth()]}<b>${fmtBRL(faturaMes)}</b>${creditsMes>0?`<span style="display:block;font-size:10px;color:var(--primary-dark);font-weight:600;">− ${fmtBRL(creditsMes)} em créditos</span>`:''}</div>
@@ -1171,6 +1230,23 @@ function pageMetas(){
 
 /* ============================ RELATÓRIOS ============================ */
 function pageRelatorios(){
+  const anoAtual = state.relatorioAno || new Date().getFullYear();
+  const despesasAno = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && txMonthKey(t).startsWith(String(anoAtual)));
+  const receitasAno = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t).startsWith(String(anoAtual)));
+  const anoCatMap = {};
+  despesasAno.forEach(t=>{ anoCatMap[t.category] = (anoCatMap[t.category]||0)+t.amount; });
+  const anoCatRows = Object.entries(anoCatMap).map(([cid,val])=>({cid, val, c:catById(cid)})).sort((a,b)=>b.val-a.val);
+  const totalDespesasAno = despesasAno.reduce((s,t)=>s+t.amount,0);
+  const totalReceitasAno = receitasAno.reduce((s,t)=>s+t.amount,0);
+  const anoMonthly = [];
+  for(let m=0;m<12;m++){
+    const mk = anoAtual+'-'+String(m+1).padStart(2,'0');
+    const de = despesasAno.filter(t=>txMonthKey(t)===mk).reduce((s,t)=>s+t.amount,0);
+    const re = receitasAno.filter(t=>txMonthKey(t)===mk).reduce((s,t)=>s+t.amount,0);
+    anoMonthly.push({label:MONTHS_SHORT[m], de, r:re});
+  }
+  window._anoEvoData = anoMonthly;
+
   const despesas = DB.tx.filter(t=>t.type==='despesa');
   const byEst = {};
   despesas.forEach(t=>{
@@ -1203,7 +1279,34 @@ function pageRelatorios(){
   }).sort((a,b)=>a.remaining-b.remaining);
 
   return `
-    <div class="page-head"><div><h1>Relatórios</h1><p>Análise por estabelecimento e parcelamentos em aberto</p></div></div>
+    <div class="page-head">
+      <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos e resumo anual</p></div>
+      <div class="head-actions"><div class="month-switch">
+        <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())-1; renderPage();">‹</button>
+        <span class="lbl">${anoAtual}</span>
+        <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())+1; renderPage();">›</button>
+      </div></div>
+    </div>
+
+    <div class="grid g4" style="margin-bottom:16px;">
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--primary-tint);color:var(--primary-dark)">↗</span>RECEITAS NO ANO</div><div class="stat-value up">${fmtBRL(totalReceitasAno)}</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--danger-tint);color:var(--danger)">↘</span>DESPESAS NO ANO</div><div class="stat-value down">${fmtBRL(totalDespesasAno)}</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--info-tint);color:var(--info)">◈</span>SALDO NO ANO</div><div class="stat-value">${fmtBRL(totalReceitasAno-totalDespesasAno)}</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>MÉDIA MENSAL DE GASTO</div><div class="stat-value">${fmtBRL(totalDespesasAno/12)}</div></div>
+    </div>
+
+    <div class="grid g2" style="margin-bottom:16px;">
+      <div class="card card-pad">
+        <div class="section-title"><h3>Evolução do Ano</h3><span class="meta">${anoAtual}, mês a mês</span></div>
+        <div style="height:200px;" id="chartAnoEvo"></div>
+      </div>
+      <div class="card card-pad">
+        <div class="section-title"><h3>Despesas por Categoria no Ano</h3><span class="meta">${anoCatRows.length} categorias</span></div>
+        ${anoCatRows.length===0? emptyState('📅','Nenhuma despesa neste ano',' ') :
+          anoCatRows.map(r=>{ const pct=totalDespesasAno?(r.val/totalDespesasAno*100):0;
+            return `<div class="legend-row"><span class="legend-name">${r.c?r.c.icon+' '+esc(r.c.name):'—'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(r.val)}</span></div>`; }).join('')}
+      </div>
+    </div>
 
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title"><h3>Gastos por Estabelecimento / Descrição</h3><span class="meta">peso sobre o total de despesas registradas</span></div>
@@ -1254,10 +1357,12 @@ function pageRelatorios(){
     <div class="card card-pad">
       <div class="section-title"><h3>Parcelamentos em Andamento</h3><span class="meta">${parcelasInfo.length} ativo(s)</span></div>
       ${parcelasInfo.length===0? emptyState('📆','Nenhum parcelamento em aberto','Lance despesas parceladas para acompanhar aqui quando elas terminam.') :
-        parcelasInfo.map(t=>{ const c=catById(t.category); const card=t.cardId?cardById(t.cardId):null; return `<div class="tx-row">
+        parcelasInfo.map(t=>{ const c=catById(t.category); const card=t.cardId?cardById(t.cardId):null; const pct=(t.installmentCurrent/t.installmentTotal*100);
+          return `<div class="tx-row" style="flex-wrap:wrap;">
           <div class="tx-ic out">${c?c.icon:'🧾'}</div>
           <div class="tx-main"><div class="tx-title-row"><span class="tx-title">${esc(t.description)}</span><span class="badge badge-parcela">${t.installmentCurrent}/${t.installmentTotal}</span></div>
-          <div class="tx-sub">${card?esc(card.name)+' · ':''}termina em ${t.endLabel} · faltam ${t.remaining} parcela(s)</div></div>
+          <div class="tx-sub">${card?esc(card.name)+' · ':''}termina em ${t.endLabel} · faltam ${t.remaining} parcela(s)</div>
+          <div class="progress-track" style="margin-top:6px;"><div class="progress-fill" style="width:${pct}%; background:var(--info)"></div></div></div>
           <div class="tx-amt down">${fmtBRL(t.amount)}</div>
         </div>`; }).join('')}
     </div>
@@ -1325,6 +1430,7 @@ function afterRenderCharts(){
   if(window._catDataR) renderDonutInto('chartCatR', window._catDataR, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length]);
   if(window._cardData) renderDonutInto('chartCard', window._cardData, (cid)=> PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length]);
   if(window._evoData) renderEvoBars('chartEvo', window._evoData);
+  if(window._anoEvoData) renderEvoBars('chartAnoEvo', window._anoEvoData);
 }
 
 /* ============================ MODAL SYSTEM ============================ */
@@ -1961,6 +2067,7 @@ function confirmImport(){
     if(usingFallbackStorage){
       setTimeout(()=>toast('Armazenamento na nuvem indisponível — seus dados estão sendo salvos apenas neste navegador.'), 400);
     }
+    setTimeout(()=>checkAutoBackup(), 1200);
   }catch(e){
     console.error('Falha ao renderizar o app:', e);
     document.getElementById('app').innerHTML = '<div style="padding:50px; font-family:Inter,sans-serif; max-width:520px; margin:0 auto; text-align:center; color:#374151;">'+
