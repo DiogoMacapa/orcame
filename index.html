@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-receitas-liquidas-consistente';
+const APP_VERSION = '2026.07.10-cartoes-detalhes-movidos';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -780,18 +780,13 @@ function pagePainel(){
   const saldo = totalReceitas - totalDespesas;
   const lucroLiquido = totalLiquido - totalDespesas;
 
-  // despesas por categoria (exclui estornos/créditos negativos da distribuição, mas eles já contam no total)
+  // despesas por categoria — apenas pix/dinheiro/transferência (detalhe de cartão fica na página Cartões)
   const byCat = {};
-  despesas.filter(t=>t.amount>0).forEach(t=>{ byCat[t.category] = (byCat[t.category]||0)+t.amount; });
+  despesas.filter(t=>t.amount>0 && t.paymentMethod!=='cartao').forEach(t=>{ byCat[t.category] = (byCat[t.category]||0)+t.amount; });
   const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   const creditosMesTotal = despesas.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
-
-  // estabelecimentos nos cartoes, combinando todos os cartoes juntos
-  const byEstCard = {};
-  const despesasCartao = despesas.filter(t=>t.amount>0 && t.paymentMethod==='cartao');
-  const totalDespesasCartao = despesasCartao.reduce((s,t)=>s+t.amount,0);
-  despesasCartao.forEach(t=>{ byEstCard[t.description] = (byEstCard[t.description]||0)+t.amount; });
-  const estCardEntries = Object.entries(byEstCard).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const cartoesNetMes = despesas.filter(t=>t.paymentMethod==='cartao').reduce((s,t)=>s+t.amount,0);
+  if(cartoesNetMes>0) catEntries.push(['__cartoes__', cartoesNetMes]);
 
   // receitas por categoria
   const byCatR = {};
@@ -895,9 +890,13 @@ function pagePainel(){
         <div style="display:flex; gap:20px; align-items:center;">
           <div class="donut-wrap" id="chartCat" style="width:150px;height:150px;flex-shrink:0;position:relative;"></div>
           <div style="flex:1; min-width:0;">
-            ${catEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesas? (val/totalDespesas*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
+            ${catEntries.map(([cid,val])=>{
+              const pct=totalDespesas? (val/totalDespesas*100):0;
+              if(cid==='__cartoes__'){
+                return `<div class="legend-row oc-hoverable" style="cursor:pointer;" onclick="nav('cartoes')" data-tip-label="💳 Cartões" data-tip-pct="ver detalhes na página Cartões" data-tip-value="${esc(fmtBRL(val))}"><span class="legend-dot" style="background:#171B21"></span><span class="legend-name">💳 Cartões (ver detalhes →)</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`;
+              }
+              const c=catById(cid); const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
-            ${''}
           </div>
         </div>
         `}
@@ -932,18 +931,6 @@ function pagePainel(){
           </table>`;
         })()}
       </div>
-    </div>
-
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="section-title"><h3>Estabelecimentos nos Cartões (BTG + Revolut juntos)</h3><span class="meta">soma de todos os cartões, no mês</span></div>
-      ${estCardEntries.length===0? emptyState('🛒','Nenhum gasto no cartão neste mês','Quando você importar faturas, aqui aparece cada loja somando os dois cartões — ex: Shopee usado no BTG e no Revolut vira um total só.') : `
-      <div class="grid g2" style="gap:10px 24px;">
-      ${(()=>{ const maxVal = Math.max(...estCardEntries.map(e=>e[1]),1); return estCardEntries.map(([name,val],i)=>{ const pct = totalDespesasCartao? (val/totalDespesasCartao*100):0; const barPct = (val/maxVal*100); const color=PALETTE[i%PALETTE.length];
-        return `<div>
-          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span style="font-weight:600;">${esc(name)}</span><span style="font-family:var(--mono); color:var(--text-muted);">${pct.toFixed(1)}% · ${fmtBRL(val)}</span></div>
-          <div class="progress-track oc-hoverable" data-tip-label="${esc(name)}" data-tip-pct="${pct.toFixed(1)}% do total nos cartões" data-tip-value="${esc(fmtBRL(val))}"><div class="progress-fill" style="width:${barPct}%; background:${color}"></div></div>
-        </div>`; }).join(''); })()}
-      </div>`}
     </div>
 
     <div class="grid g2" style="margin-bottom:16px;">
@@ -1208,6 +1195,18 @@ function pageCartoes(){
   const cardOverviewEntries = Object.entries(byCardOverview).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
   window._cardOverviewData = cardOverviewEntries;
   const totalTodosCartoes = cardOverviewEntries.reduce((s,e)=>s+e[1],0);
+
+  const despesasCartaoMes = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && t.paymentMethod==='cartao' && (t.invoiceMonth||t.date.slice(0,7))===mk);
+  const byCatCartao = {};
+  despesasCartaoMes.forEach(t=>{ byCatCartao[t.category] = (byCatCartao[t.category]||0)+t.amount; });
+  const catCartaoEntries = Object.entries(byCatCartao).sort((a,b)=>b[1]-a[1]);
+  window._catCartaoData = catCartaoEntries;
+  const totalDespesasCartaoGross = despesasCartaoMes.reduce((s,t)=>s+t.amount,0);
+
+  const byEstCard = {};
+  despesasCartaoMes.forEach(t=>{ byEstCard[t.description] = (byEstCard[t.description]||0)+t.amount; });
+  const estCardEntries = Object.entries(byEstCard).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
   return `
     <div class="page-head">
       <div><h1>Cartões de Crédito</h1><p>${DB.cards.length} cartão(ões) cadastrado(s) · fatura de ${monthLabel(state.month)}</p></div>
@@ -1225,6 +1224,33 @@ function pageCartoes(){
         </div>
       </div>`}
     </div>` : ''}
+
+    ${DB.cards.length>0 ? `
+    <div class="grid g2" style="margin-bottom:16px;">
+      <div class="card card-pad">
+        <div class="section-title"><h3>Despesas por Categoria nos Cartões</h3><span class="meta">${DB.cards.length>1?'BTG + Revolut juntos, ':''}fatura de ${monthLabel(state.month)}</span></div>
+        ${catCartaoEntries.length===0? emptyState('🍕','Nenhuma despesa no cartão neste mês',' ') : `
+        <div style="display:flex; gap:20px; align-items:center;">
+          <div class="donut-wrap" id="chartCatCartao" style="width:150px;height:150px;flex-shrink:0;position:relative;"></div>
+          <div style="flex:1; min-width:0;">
+            ${catCartaoEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesasCartaoGross?(val/totalDespesasCartaoGross*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
+              return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+          </div>
+        </div>`}
+      </div>
+      <div class="card card-pad">
+        <div class="section-title"><h3>Estabelecimentos nos Cartões</h3><span class="meta">top 10, fatura de ${monthLabel(state.month)}</span></div>
+        ${estCardEntries.length===0? emptyState('🛒','Nenhum gasto no cartão neste mês',' ') : `
+        <div style="display:flex; flex-direction:column; gap:10px;">
+        ${(()=>{ const maxVal = Math.max(...estCardEntries.map(e=>e[1]),1); return estCardEntries.map(([name,val],i)=>{ const pct = totalDespesasCartaoGross? (val/totalDespesasCartaoGross*100):0; const barPct=(val/maxVal*100); const color=PALETTE[i%PALETTE.length];
+          return `<div>
+            <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span style="font-weight:600;">${esc(name)}</span><span style="font-family:var(--mono); color:var(--text-muted);">${pct.toFixed(1)}% · ${fmtBRL(val)}</span></div>
+            <div class="progress-track oc-hoverable" data-tip-label="${esc(name)}" data-tip-pct="${pct.toFixed(1)}% do total nos cartões" data-tip-value="${esc(fmtBRL(val))}"><div class="progress-fill" style="width:${barPct}%; background:${color}"></div></div>
+          </div>`; }).join(''); })()}
+        </div>`}
+      </div>
+    </div>
+    ` : ''}
     ${DB.cards.length===0? `<div class="card">${emptyState('💳','Nenhum cartão cadastrado','Cadastre seus cartões para acompanhar fatura, limite e vencimento.')}</div>` : `
     <div class="grid g3">
       ${DB.cards.map(c=>{
@@ -1746,9 +1772,10 @@ function renderEvoBars(elId, data){
     </div>`;
 }
 function afterRenderCharts(){
-  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], window._totalDespesasNet, (cid)=>{ const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
+  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> cid==='__cartoes__' ? '#171B21' : PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], window._totalDespesasNet, (cid)=>{ if(cid==='__cartoes__') return '💳 Cartões'; const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
   if(window._catDataR) renderDonutInto('chartCatR', window._catDataR, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], null, (cid)=>{ const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
   if(window._cardOverviewData) renderDonutInto('chartCardOverview', window._cardOverviewData, (cid)=> PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length], null, (cid)=>{ const c=cardById(cid); return c?c.name:'—'; });
+  if(window._catCartaoData) renderDonutInto('chartCatCartao', window._catCartaoData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], null, (cid)=>{ const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
   if(window._evoData) renderEvoBars('chartEvo', window._evoData);
   if(window._anoEvoData) renderEvoBars('chartAnoEvo', window._anoEvoData);
 }
