@@ -291,7 +291,7 @@ const DEFAULT_CATS = [
 ];
 
 const APP_VERSION = '2026.07.08-date-fix';
-let DB = { tx:[], cards:[], cats:[], goals:[], templates:[] };
+let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
   month: new Date(2026,6,1), // Julho 2026 context
@@ -300,12 +300,13 @@ let state = {
   catTab:'despesa',
   editing:null,
   importStep:0, importRows:[], importRawText:'', importCardId:null,
+  selectedTx: new Set(),
 };
 
 /* ---- Supabase config (fetch direto na API REST, sem depender de CDN externo) ---- */
 const SUPABASE_REST_URL = 'https://alrpnvctcooernsdddax.supabase.co/rest/v1';
 const SUPABASE_ANON_KEY = 'sb_publishable_kszH2B5zQuSOHUZTxSTNHw_Vit34hNT';
-const TABLE_MAP = { tx:'transactions', cards:'cards', cats:'categories', goals:'goals', templates:'templates' };
+const TABLE_MAP = { tx:'transactions', cards:'cards', cats:'categories', goals:'goals', templates:'templates', merchantRules:'merchant_rules' };
 let supa = false; // true quando a conexão com o Supabase foi confirmada funcionando
 let usingFallbackStorage = false;
 
@@ -376,6 +377,7 @@ const toDbRow = {
     default_amount:(t.defaultAmount===''||t.defaultAmount==null)?null:Number(t.defaultAmount),
     payment_method:t.paymentMethod||null, card_id:t.cardId||null, recurring:!!t.recurring,
   }),
+  merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
 };
 const fromDbRow = {
   tx: r => ({
@@ -401,6 +403,7 @@ const fromDbRow = {
     id:r.id, type:r.type, title:r.title, category:r.category||'', defaultAmount:r.default_amount==null?'':r.default_amount,
     paymentMethod:r.payment_method||'', cardId:r.card_id||'', recurring:!!r.recurring,
   }),
+  merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
 };
 
 async function loadAll(){
@@ -730,7 +733,7 @@ function pagePainel(){
 
 function emptyState(ic,b,s){ return `<div class="empty-state"><div class="ic">${ic}</div><b>${esc(b)}</b><span>${esc(s)}</span></div>`; }
 
-function txRow(t){
+function txRow(t, selectable){
   const c = catById(t.category);
   const card = t.cardId ? cardById(t.cardId) : null;
   const isCredit = t.type==='despesa' && t.amount<0;
@@ -739,7 +742,9 @@ function txRow(t){
   else if(t.paymentMethod) parts.push(t.paymentMethod.toUpperCase());
   parts.push(fmtDateShort(t.date));
   const displayAmt = t.type==='receita' ? t.amount : -t.amount; // negativo = credito, sinal correto automaticamente
+  const checked = state.selectedTx && state.selectedTx.has(t.id);
   return `<div class="tx-row">
+    ${selectable?`<input type="checkbox" style="margin-right:4px; width:16px; height:16px; flex-shrink:0;" ${checked?'checked':''} onchange="toggleTxSelect('${t.id}')">`:''}
     <div class="tx-ic ${(t.type==='receita'||isCredit)?'in':'out'}">${isCredit?'🔄':(c?c.icon:(t.type==='receita'?'💰':'🧾'))}</div>
     <div class="tx-main">
       <div class="tx-title-row"><span class="tx-title">${esc(t.description)}</span>${isCredit?'<span class="badge badge-fixa">Estorno/Crédito</span>':''}${t.recurring?'<span class="badge badge-fixa">Fixa</span>':''}${t.installmentTotal?`<span class="badge badge-parcela">${t.installmentCurrent}/${t.installmentTotal}</span>`:''}${t.status==='pendente'?'<span class="badge badge-pendente">Pendente</span>':t.status==='pago'?'<span class="badge badge-pago">Pago</span>':''}</div>
@@ -748,6 +753,18 @@ function txRow(t){
     <div class="tx-amt ${displayAmt>=0?'up':'down'}">${displayAmt>=0?'+':''}${fmtBRL(displayAmt)}</div>
     <div class="tx-actions"><button onclick="openTxModal('${t.id}')" title="Editar">✎</button><button onclick="deleteTx('${t.id}')" title="Excluir">🗑</button></div>
   </div>`;
+}
+function toggleTxSelect(id){
+  if(!state.selectedTx) state.selectedTx = new Set();
+  if(state.selectedTx.has(id)) state.selectedTx.delete(id); else state.selectedTx.add(id);
+  renderPage();
+}
+function toggleSelectAllVisible(ids){
+  if(!state.selectedTx) state.selectedTx = new Set();
+  const allSelected = ids.every(id=>state.selectedTx.has(id));
+  if(allSelected){ ids.forEach(id=>state.selectedTx.delete(id)); }
+  else { ids.forEach(id=>state.selectedTx.add(id)); }
+  renderPage();
 }
 
 /* ============================ TRANSAÇÕES ============================ */
@@ -787,13 +804,20 @@ function pageTransacoes(){
         ${DB.cards.map(c=>`<option value="${c.id}" ${state.txFilterCard===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
       </select>
     </div>
-    ${list.length>0? `<div style="display:flex; gap:8px; margin-bottom:12px;">
+    ${list.length>0? `<div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+      <label class="checkline" style="margin-right:4px;"><input type="checkbox" ${list.length>0 && list.every(t=>state.selectedTx&&state.selectedTx.has(t.id))?'checked':''} onchange="toggleSelectAllVisible(${JSON.stringify(list.map(t=>t.id))})"> Selecionar todas</label>
       <button class="btn btn-sm btn-outline" onclick="bulkMarkPaid()">✓ Marcar estas ${list.length} como pagas</button>
       <button class="btn btn-sm btn-outline" onclick="bulkSetInvoiceMonth()">📅 Definir mês de fatura destas ${list.length}</button>
       <button class="btn btn-sm btn-danger-ghost" onclick="bulkDelete()">🗑 Excluir estas ${list.length}</button>
+      ${state.selectedTx && state.selectedTx.size>0 ? `
+      <span style="width:1px; height:20px; background:var(--border); margin:0 4px;"></span>
+      <span style="font-size:12.5px; color:var(--text-muted); font-weight:600;">${state.selectedTx.size} selecionada(s):</span>
+      <button class="btn btn-sm btn-primary" onclick="bulkChangeCategory()">🏷️ Alterar categoria</button>
+      <button class="btn btn-sm btn-outline" onclick="bulkChangeCard()">💳 Mudar cartão</button>
+      ` : ''}
     </div>` : ''}
     <div class="card card-pad">
-      ${list.length===0? emptyState('🧾','Nenhuma transação encontrada','Ajuste os filtros ou lance uma nova transação.') : list.map(t=>txRow(t)).join('')}
+      ${list.length===0? emptyState('🧾','Nenhuma transação encontrada','Ajuste os filtros ou lance uma nova transação.') : list.map(t=>txRow(t,true)).join('')}
     </div>
   `;
 }
@@ -807,6 +831,61 @@ function currentTxFilterIds(){
     list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
   }
   return list.map(t=>t.id);
+}
+function bulkChangeCategory(){
+  const ids = Array.from(state.selectedTx||[]);
+  if(ids.length===0) return;
+  const sample = DB.tx.find(t=>ids.includes(t.id));
+  const type = sample ? sample.type : 'despesa';
+  openModal(`
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-head"><h3>Alterar categoria</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="hint-box">Aplica a categoria escolhida às ${ids.length} transações selecionadas, e o sistema vai lembrar essa regra para os mesmos estabelecimentos em importações futuras.</div>
+        <div class="field"><label>Nova categoria</label><select class="select full" id="f_bulkCat">${catsFor(type).map(c=>`<option value="${c.id}">${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="applyBulkCategory(${JSON.stringify(ids).replace(/"/g,"'")})">Aplicar</button>
+      </div>
+    </div>
+  `);
+}
+function applyBulkCategory(ids){
+  const newCat = document.getElementById('f_bulkCat').value;
+  const learnedDescs = new Set();
+  DB.tx.forEach(t=>{
+    if(ids.includes(t.id)){
+      t.category = newCat;
+      if(t.type==='despesa' && !learnedDescs.has(normalizeMerchant(t.description))){
+        learnMerchantRule(t.description, newCat, 'despesa');
+        learnedDescs.add(normalizeMerchant(t.description));
+      }
+    }
+  });
+  persist('tx').then(()=>{ closeModal(); state.selectedTx=new Set(); toast(ids.length+' transações atualizadas'); renderPage(); });
+}
+function bulkChangeCard(){
+  const ids = Array.from(state.selectedTx||[]);
+  if(ids.length===0) return;
+  openModal(`
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-head"><h3>Mudar cartão</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="hint-box">Move as ${ids.length} transações selecionadas para o cartão escolhido.</div>
+        <div class="field"><label>Novo cartão</label><select class="select full" id="f_bulkCard">${DB.cards.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="applyBulkCard(${JSON.stringify(ids).replace(/"/g,"'")})">Aplicar</button>
+      </div>
+    </div>
+  `);
+}
+function applyBulkCard(ids){
+  const newCardId = document.getElementById('f_bulkCard').value;
+  DB.tx.forEach(t=>{ if(ids.includes(t.id)){ t.cardId = newCardId; t.paymentMethod = 'cartao'; } });
+  persist('tx').then(()=>{ closeModal(); state.selectedTx=new Set(); toast(ids.length+' transações movidas de cartão'); renderPage(); });
 }
 function bulkDelete(){
   const ids = currentTxFilterIds();
@@ -1392,7 +1471,10 @@ function saveTx(){
     obj.repasseAmount = parseFloat(document.getElementById('f_repasse').value)||0;
   }
   const idx = DB.tx.findIndex(x=>x.id===obj.id);
+  const wasEditingExisting = !!t.id;
+  const categoryChanged = wasEditingExisting && t.category !== obj.category;
   if(idx>=0) DB.tx[idx] = obj; else DB.tx.push(obj);
+  if(obj.type==='despesa' && categoryChanged){ learnMerchantRule(obj.description, obj.category, 'despesa'); }
   persist('tx').then(()=>{ closeModal(); toast('Transação salva'); renderPage(); });
 }
 function deleteTx(id){
@@ -1628,9 +1710,27 @@ const MERCHANT_HINTS = [
   {re:/contabilizei|grana\s*capital|kaspersky|tecmilhas\s*solucoes/i, cat:'c-servicos'},
   {re:/distribuidora\s*j\s*n|havan/i, cat:'c-vestuario'},
 ];
+function normalizeMerchant(desc){
+  return (desc||'').toLowerCase().trim().replace(/\s{2,}/g,' ');
+}
 function guessCategory(desc){
+  const norm = normalizeMerchant(desc);
+  const learned = DB.merchantRules.find(r=>r.type==='despesa' && norm.includes(normalizeMerchant(r.pattern)));
+  if(learned) return learned.category;
   const hit = MERCHANT_HINTS.find(h=>h.re.test(desc));
   return hit ? hit.cat : 'c-outros-d';
+}
+function learnMerchantRule(description, category, type){
+  const pattern = normalizeMerchant(description);
+  if(!pattern || pattern.length<2) return;
+  const existing = DB.merchantRules.find(r=>r.type===type && normalizeMerchant(r.pattern)===pattern);
+  if(existing){
+    if(existing.category===category) return; // ja aprendido, nada a fazer
+    existing.category = category;
+  } else {
+    DB.merchantRules.push({id:uid(), pattern:description.trim(), category, type});
+  }
+  persist('merchantRules');
 }
 
 function openImportModal(){
@@ -1649,10 +1749,10 @@ function renderImportModal(){
     const tab = state.importTab||'texto';
     body = `
       <div class="row2">
-        <div class="field"><label>Cartão de destino</label><select class="select full" id="f_importCard">
+        <div class="field"><label>Cartão de destino</label><select class="select full" id="f_importCard" onchange="state.importCardId=this.value;">
           ${DB.cards.length===0?'<option value="">Cadastre um cartão primeiro</option>':DB.cards.map(c=>`<option value="${c.id}" ${state.importCardId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select></div>
-        <div class="field"><label>Mês desta fatura</label><input class="input full" id="f_importMonth" type="month" value="${state.importInvoiceMonth}"></div>
+        <div class="field"><label>Mês desta fatura</label><input class="input full" id="f_importMonth" type="month" value="${state.importInvoiceMonth}" onchange="state.importInvoiceMonth=this.value;"></div>
       </div>
       <div class="field"><label>Status dessas transações</label><div class="seg">
         <button class="${state.importStatus==='pendente'?'on':''}" onclick="state.importStatus='pendente'; renderImportModal();">Pendente</button>
