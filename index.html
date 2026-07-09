@@ -290,7 +290,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.09-fix-selectall-clean-categoria';
+const APP_VERSION = '2026.07.09-net-totals-everywhere';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -700,6 +700,7 @@ function pagePainel(){
   }
   window._evoData = evo;
   window._catData = catEntries;
+  window._totalDespesasNet = totalDespesas;
   window._catDataR = catEntriesR;
 
   return `
@@ -1016,9 +1017,9 @@ const CARD_COLORS = [{k:'orange',c:'cc-orange'},{k:'navy',c:'cc-navy'},{k:'viole
 function pageCartoes(){
   const mk = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0');
   const byCardOverview = {};
-  DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && t.paymentMethod==='cartao' && t.cardId && (t.invoiceMonth||t.date.slice(0,7))===mk)
+  DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod==='cartao' && t.cardId && (t.invoiceMonth||t.date.slice(0,7))===mk)
     .forEach(t=>{ byCardOverview[t.cardId] = (byCardOverview[t.cardId]||0)+t.amount; });
-  const cardOverviewEntries = Object.entries(byCardOverview).sort((a,b)=>b[1]-a[1]);
+  const cardOverviewEntries = Object.entries(byCardOverview).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
   window._cardOverviewData = cardOverviewEntries;
   const totalTodosCartoes = cardOverviewEntries.reduce((s,e)=>s+e[1],0);
   return `
@@ -1464,12 +1465,12 @@ function svgDonut(segments, size, thickness){
   }).join('');
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${arcs}</svg>`;
 }
-function renderDonutInto(elId, entries, colorFn, totalLabel){
+function renderDonutInto(elId, entries, colorFn, totalOverride){
   const el = document.getElementById(elId);
   if(!el) return;
   if(!entries || entries.length===0){ el.innerHTML=''; return; }
   const segments = entries.map((e,i)=>({value:e[1], color:colorFn(e[0],i)}));
-  const total = segments.reduce((s,x)=>s+x.value,0);
+  const total = (typeof totalOverride === 'number') ? totalOverride : segments.reduce((s,x)=>s+x.value,0);
   el.innerHTML = svgDonut(segments,150,17) +
     `<div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;">
        <div style="font-size:9px; color:var(--text-faint); font-weight:700; letter-spacing:.05em;">TOTAL</div>
@@ -1505,7 +1506,7 @@ function renderEvoBars(elId, data){
     </div>`;
 }
 function afterRenderCharts(){
-  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length]);
+  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], window._totalDespesasNet);
   if(window._catDataR) renderDonutInto('chartCatR', window._catDataR, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length]);
   if(window._cardOverviewData) renderDonutInto('chartCardOverview', window._cardOverviewData, (cid)=> PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length]);
   if(window._evoData) renderEvoBars('chartEvo', window._evoData);
