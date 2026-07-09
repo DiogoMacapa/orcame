@@ -1897,7 +1897,7 @@ function parsePdfText(text){
     desc = desc.replace(/\s{2,}/g,' ').replace(/^[-–:\s]+|[-–:\s]+$/g,'');
     if(!desc || desc.length<2) return;
     // ignore obvious summary lines
-    if(/total|subtotal|saldo\s*anterior|limite\s*dispon|pagamento\s*m[ií]nimo/i.test(desc)) return;
+    if(/^total\b|\btotal\s+(de|das|dos)\b|\bsubtotal\b|saldo\s*anterior|limite\s*dispon|pagamento\s*m[ií]nimo/i.test(desc)) return;
 
     const year = dm[3] ? (dm[3].length===2 ? 2000+parseInt(dm[3]) : parseInt(dm[3])) : refYear;
     const dayNum = parseInt(dm[1]), monthNum = parseInt(dm[2]);
