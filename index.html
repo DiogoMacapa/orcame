@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-atendimentos-por-sessao';
+const APP_VERSION = '2026.07.10-pendente-default-quickpay';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -841,16 +841,22 @@ function pagePainel(){
       const usedDescsThisMonth = txMes.map(t=>normalizeMerchant(t.description));
       const pendentes = DB.templates.filter(tpl => !usedDescsThisMonth.some(d=>d.includes(normalizeMerchant(tpl.title))));
       if(DB.templates.length===0) return '';
-      return `<div class="card card-pad" style="margin-bottom:16px;">
-        <div class="section-title"><h3>Recorrentes deste mês</h3><span class="meta">${pendentes.length} ainda não lançado(s) de ${DB.templates.length}</span></div>
-        ${pendentes.length===0? `<div style="font-size:12.5px; color:var(--primary-dark); padding:8px 0;">🎉 Todos os recorrentes já foram lançados este mês.</div>` : `
-        <div class="grid g3" style="gap:8px;">
-        ${pendentes.map(tpl=>{ const c=catById(tpl.category);
+      const pendR = pendentes.filter(t=>t.type==='receita');
+      const pendD = pendentes.filter(t=>t.type==='despesa');
+      const renderGroup = (list)=> list.length===0 ? '' : `<div class="grid g3" style="gap:8px;">
+        ${list.map(tpl=>{ const c=catById(tpl.category);
           return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px; border:1px solid var(--border); border-radius:9px;">
             <div style="display:flex; align-items:center; gap:8px; min-width:0;"><span>${c?c.icon:(tpl.type==='receita'?'💰':'🧾')}</span><span style="font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(tpl.title)}</span></div>
             <button class="btn btn-sm ${tpl.type==='receita'?'btn-outline':'btn-primary'}" onclick="quickLogTemplate('${tpl.id}')">+ Lançar</button>
           </div>`; }).join('')}
-        </div>`}
+        </div>`;
+      return `<div class="card card-pad" style="margin-bottom:16px;">
+        <div class="section-title"><h3>Recorrentes deste mês</h3><span class="meta">${pendentes.length} ainda não lançado(s) de ${DB.templates.length}</span></div>
+        ${pendentes.length===0? `<div style="font-size:12.5px; color:var(--primary-dark); padding:8px 0;">🎉 Todos os recorrentes já foram lançados este mês.</div>` : `
+        ${pendR.length>0?`<div style="font-size:11px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">↗ Receitas (${pendR.length})</div>${renderGroup(pendR)}`:''}
+        ${pendR.length>0 && pendD.length>0?'<div style="height:16px;"></div>':''}
+        ${pendD.length>0?`<div style="font-size:11px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">↘ Despesas (${pendD.length})</div>${renderGroup(pendD)}`:''}
+        `}
       </div>`;
     })()}
 
@@ -1005,8 +1011,15 @@ function txRow(t, selectable){
       <div class="tx-sub">${parts.join(' · ')}</div>
     </div>
     <div class="tx-amt ${displayAmt>=0?'up':'down'}">${displayAmt>=0?'+':''}${fmtBRL(displayAmt)}</div>
+    ${t.status==='pendente'?`<button onclick="quickMarkPaid('${t.id}')" title="${t.type==='receita'?'Marcar como recebido':'Marcar como pago'}" style="width:28px; height:28px; border:none; background:var(--primary-tint); color:var(--primary-dark); border-radius:7px; font-size:13px; flex-shrink:0;">✓</button>`:''}
     <div class="tx-actions"><button onclick="openTxModal('${t.id}')" title="Editar">✎</button><button onclick="deleteTx('${t.id}')" title="Excluir">🗑</button></div>
   </div>`;
+}
+function quickMarkPaid(id){
+  const t = DB.tx.find(x=>x.id===id);
+  if(!t) return;
+  t.status = 'pago';
+  persist('tx').then(()=>{ toast((t.type==='receita'?'Recebido':'Pago')+': '+t.description); renderPage(); });
 }
 function toggleTxSelect(id){
   if(!state.selectedTx) state.selectedTx = new Set();
@@ -1785,7 +1798,7 @@ function openTxModal(id, presetType){
     try{ defPm = localStorage.getItem('orcame:lastPm') || 'pix'; defCard = localStorage.getItem('orcame:lastCard') || ''; }catch(_){}
     if(defCard && !DB.cards.find(c=>c.id===defCard)) defCard='';
   }
-  state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pago', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
+  state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pendente', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
   renderTxModal();
 }
 function renderTxModal(){
@@ -1863,7 +1876,7 @@ function quickLogTemplate(id){
   if(tpl.defaultAmount && tpl.defaultAmount>0){
     const obj = {
       id: uid(), type: tpl.type, description: tpl.title, category: tpl.category, amount: Number(tpl.defaultAmount),
-      date: new Date().toISOString().slice(0,10), status: 'pago', paymentMethod: tpl.paymentMethod||'pix',
+      date: new Date().toISOString().slice(0,10), status: 'pendente', paymentMethod: tpl.paymentMethod||'pix',
       cardId: tpl.paymentMethod==='cartao' ? tpl.cardId : '', installmentCurrent:'', installmentTotal:'',
       invoiceMonth: tpl.paymentMethod==='cartao' ? (state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0')) : '',
       recurring: !!tpl.recurring, dueDate:'', notes:'',
@@ -1923,7 +1936,7 @@ function confirmAtendimento(id){
   const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0);
   const obj = {
     id: uid(), type:'receita', description: tpl.title+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
-    amount: r.gross, date: document.getElementById('f_atDate').value, status:'pago',
+    amount: r.gross, date: document.getElementById('f_atDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
@@ -1973,7 +1986,7 @@ function confirmMultiplo(id){
   if(r.gross<=0){ toast('Informe ao menos uma quantidade','danger'); return; }
   const obj = {
     id: uid(), type:'receita', description: tpl.title+' ('+r.parts.join(', ')+')', category: tpl.category,
-    amount: r.gross, date: document.getElementById('f_mDate').value, status:'pago',
+    amount: r.gross, date: document.getElementById('f_mDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
