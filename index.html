@@ -234,6 +234,10 @@ a{color:inherit;}
 
 /* ---- Toast ---- */
 #toastWrap{position:fixed; bottom:22px; right:22px; z-index:200; display:flex; flex-direction:column; gap:8px;}
+#ocTooltip{position:fixed; z-index:400; background:#171B21; color:#fff; padding:8px 11px; border-radius:8px; font-size:12px; line-height:1.5; pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.25); max-width:220px; display:none;}
+#ocTooltip b{font-family:var(--mono); display:block; font-size:12.5px;}
+.oc-hoverable{cursor:pointer; transition:opacity .1s;}
+.oc-hoverable:hover{opacity:.82;}
 .toast{background:var(--text); color:#fff; padding:11px 16px; border-radius:10px; font-size:13px; box-shadow:var(--shadow-md); animation:slideIn .2s ease;}
 @keyframes slideIn{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
 
@@ -265,6 +269,7 @@ a{color:inherit;}
 
 <div class="app" id="app"></div>
 <div id="toastWrap"></div>
+<div id="ocTooltip"></div>
 
 <script>
 /* ============================ STATE & STORAGE ============================ */
@@ -290,7 +295,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.09-net-totals-everywhere';
+const APP_VERSION = '2026.07.09-tooltips-everywhere';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -572,6 +577,37 @@ function netReceita(t){ if(t.type!=='receita') return t.amount; const tax=t.taxP
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function daysUntil(iso){ const d=parseISO(iso); const t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/86400000); }
 
+let ocTooltipEl = null;
+function ocShowTip(evt, label, pct, value){
+  if(!ocTooltipEl) ocTooltipEl = document.getElementById('ocTooltip');
+  if(!ocTooltipEl) return;
+  ocTooltipEl.innerHTML = `${esc(label)}${pct!=null?`<br><span style="color:#9CA3AF;">${pct}</span>`:''}<b>${esc(value)}</b>`;
+  ocTooltipEl.style.display = 'block';
+  ocMoveTip(evt);
+}
+function ocMoveTip(evt){
+  if(!ocTooltipEl) return;
+  const pad = 14;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const rect = ocTooltipEl.getBoundingClientRect();
+  if(x + rect.width > window.innerWidth - 10) x = evt.clientX - rect.width - pad;
+  if(y + rect.height > window.innerHeight - 10) y = evt.clientY - rect.height - pad;
+  ocTooltipEl.style.left = x+'px';
+  ocTooltipEl.style.top = y+'px';
+}
+function ocHideTip(){ if(ocTooltipEl) ocTooltipEl.style.display = 'none'; }
+document.addEventListener('mouseover', function(e){
+  const el = e.target.closest('[data-tip-label]');
+  if(el) ocShowTip(e, el.getAttribute('data-tip-label'), el.getAttribute('data-tip-pct')||null, el.getAttribute('data-tip-value'));
+});
+document.addEventListener('mousemove', function(e){
+  const el = e.target.closest('[data-tip-label]');
+  if(el) ocMoveTip(e);
+});
+document.addEventListener('mouseout', function(e){
+  const el = e.target.closest('[data-tip-label]');
+  if(el && !e.relatedTarget?.closest?.('[data-tip-label]')) ocHideTip();
+});
 function toast(msg, kind){
   const el=document.createElement('div'); el.className='toast'; el.style.maxWidth='420px'; el.style.wordBreak='break-word';
   if(kind==='danger'){
@@ -769,7 +805,7 @@ function pagePainel(){
       ${(()=>{ const maxVal = Math.max(...estCardEntries.map(e=>e[1]),1); return estCardEntries.map(([name,val],i)=>{ const pct = totalDespesasCartao? (val/totalDespesasCartao*100):0; const barPct = (val/maxVal*100); const color=PALETTE[i%PALETTE.length];
         return `<div>
           <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span style="font-weight:600;">${esc(name)}</span><span style="font-family:var(--mono); color:var(--text-muted);">${pct.toFixed(1)}% · ${fmtBRL(val)}</span></div>
-          <div class="progress-track"><div class="progress-fill" style="width:${barPct}%; background:${color}"></div></div>
+          <div class="progress-track oc-hoverable" data-tip-label="${esc(name)}" data-tip-pct="${pct.toFixed(1)}% do total nos cartões" data-tip-value="${esc(fmtBRL(val))}"><div class="progress-fill" style="width:${barPct}%; background:${color}"></div></div>
         </div>`; }).join(''); })()}
       </div>`}
     </div>
@@ -1058,7 +1094,7 @@ function pageCartoes(){
           </div>
           <div class="card" style="border-top:none; border-top-left-radius:0; border-top-right-radius:0; margin-top:-1px;">
             ${c.limit>0? (()=>{ const pct=Math.min(100,(debtTotal/c.limit*100)); const color=pct<60?'var(--primary)':pct<85?'var(--warning)':'var(--danger)';
-              return `<div style="padding:12px 16px 0;"><div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-bottom:5px;"><span>Limite usado</span><span>${pct.toFixed(0)}% de ${fmtBRL(c.limit)}</span></div><div class="progress-track"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div></div>`; })() : ''}
+              return `<div style="padding:12px 16px 0;"><div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-bottom:5px;"><span>Limite usado</span><span>${pct.toFixed(0)}% de ${fmtBRL(c.limit)}</span></div><div class="progress-track oc-hoverable" data-tip-label="${esc(c.name)} — limite usado" data-tip-pct="${pct.toFixed(1)}% do limite" data-tip-value="${esc(fmtBRL(debtTotal))}"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div></div>`; })() : ''}
             <div class="ccard-foot" style="padding:12px 16px;">
               <div>Dívida Atual<b class="down">${fmtBRL(debtTotal)}</b></div>
               <div>Fatura de ${MONTHS_SHORT[state.month.getMonth()]}<b>${fmtBRL(faturaMes)}</b>${creditsMes>0?`<span style="display:block;font-size:10px;color:var(--primary-dark);font-weight:600;">− ${fmtBRL(creditsMes)} em créditos</span>`:''}</div>
@@ -1256,7 +1292,7 @@ function pageMetas(){
             <div><button class="btn btn-sm btn-ghost" onclick="openGoalModal('${g.id}')">✎</button><button class="btn btn-sm btn-ghost" onclick="deleteGoal('${g.id}')">🗑</button></div>
           </div>
           <div class="goal-amts" style="margin-bottom:8px;">${fmtBRL(g.currentValue)} de ${fmtBRL(g.targetValue)} (${pct.toFixed(0)}%)</div>
-          <div class="progress-track" style="margin-bottom:10px;"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div>
+          <div class="progress-track oc-hoverable" style="margin-bottom:10px;" data-tip-label="${esc(g.title)}" data-tip-pct="${pct.toFixed(1)}% da meta" data-tip-value="${esc(fmtBRL(g.currentValue))} de ${esc(fmtBRL(g.targetValue))}"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div>
           ${projLine}
           ${g.type==='juros'?`<div style="font-size:11px; color:var(--text-faint); margin-top:4px;">considerando ${g.monthlyRate}% a.m. de rentabilidade</div>`:''}
         </div>`;
@@ -1442,7 +1478,7 @@ function pageRelatorios(){
           <div class="tx-ic out">${c?c.icon:'🧾'}</div>
           <div class="tx-main"><div class="tx-title-row"><span class="tx-title">${esc(t.description)}</span><span class="badge badge-parcela">${t.installmentCurrent}/${t.installmentTotal}</span></div>
           <div class="tx-sub">${card?esc(card.name)+' · ':''}termina em ${t.endLabel} · faltam ${t.remaining} parcela(s)</div>
-          <div class="progress-track" style="margin-top:6px;"><div class="progress-fill" style="width:${pct}%; background:var(--info)"></div></div></div>
+          <div class="progress-track oc-hoverable" style="margin-top:6px;" data-tip-label="${esc(t.description)}" data-tip-pct="parcela ${t.installmentCurrent} de ${t.installmentTotal}" data-tip-value="${esc(fmtBRL(t.amount))}/parcela"><div class="progress-fill" style="width:${pct}%; background:var(--info)"></div></div></div>
           <div class="tx-amt down">${fmtBRL(t.amount)}</div>
         </div>`; }).join('')}
     </div>
@@ -1459,17 +1495,19 @@ function svgDonut(segments, size, thickness){
   const arcs = segments.map(seg=>{
     const frac = seg.value/total;
     const dash = Math.max(frac*circ - (segments.length>1?1.5:0),0);
-    const el = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${thickness}" stroke-linecap="round" stroke-dasharray="${dash} ${circ-dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    const pctLabel = (frac*100).toFixed(1)+'%';
+    const tipAttrs = seg.label!=null ? `class="oc-hoverable" data-tip-label="${esc(seg.label)}" data-tip-pct="${esc(pctLabel)}" data-tip-value="${esc(fmtBRL(seg.value))}"` : '';
+    const el = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${thickness}" stroke-linecap="round" stroke-dasharray="${dash} ${circ-dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})" ${tipAttrs}/>`;
     offset += frac*circ;
     return el;
   }).join('');
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${arcs}</svg>`;
 }
-function renderDonutInto(elId, entries, colorFn, totalOverride){
+function renderDonutInto(elId, entries, colorFn, totalOverride, labelFn){
   const el = document.getElementById(elId);
   if(!el) return;
   if(!entries || entries.length===0){ el.innerHTML=''; return; }
-  const segments = entries.map((e,i)=>({value:e[1], color:colorFn(e[0],i)}));
+  const segments = entries.map((e,i)=>({value:e[1], color:colorFn(e[0],i), label: labelFn?labelFn(e[0],i):null}));
   const total = (typeof totalOverride === 'number') ? totalOverride : segments.reduce((s,x)=>s+x.value,0);
   el.innerHTML = svgDonut(segments,150,17) +
     `<div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;">
@@ -1495,8 +1533,8 @@ function renderEvoBars(elId, data){
   data.forEach((d,i)=>{
     const gx = padL + i*groupW + groupW/2;
     const rh = d.r/max*plotH, dh = d.de/max*plotH;
-    bars += `<rect x="${gx-barW-2}" y="${padT+plotH-rh}" width="${barW}" height="${rh}" rx="4" fill="#0EA972"/>`;
-    bars += `<rect x="${gx+2}" y="${padT+plotH-dh}" width="${barW}" height="${dh}" rx="4" fill="#E4483A"/>`;
+    bars += `<rect class="oc-hoverable" data-tip-label="Receitas — ${esc(d.label)}" data-tip-value="${esc(fmtBRL(d.r))}" x="${gx-barW-2}" y="${padT+plotH-rh}" width="${barW}" height="${Math.max(rh,2)}" rx="4" fill="#0EA972"/>`;
+    bars += `<rect class="oc-hoverable" data-tip-label="Despesas — ${esc(d.label)}" data-tip-value="${esc(fmtBRL(d.de))}" x="${gx+2}" y="${padT+plotH-dh}" width="${barW}" height="${Math.max(dh,2)}" rx="4" fill="#E4483A"/>`;
     labels += `<text x="${gx}" y="${h-8}" font-size="11" fill="#6B7280" text-anchor="middle">${d.label}</text>`;
   });
   el.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">${gridlines}${bars}${labels}</svg>
@@ -1506,9 +1544,9 @@ function renderEvoBars(elId, data){
     </div>`;
 }
 function afterRenderCharts(){
-  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], window._totalDespesasNet);
-  if(window._catDataR) renderDonutInto('chartCatR', window._catDataR, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length]);
-  if(window._cardOverviewData) renderDonutInto('chartCardOverview', window._cardOverviewData, (cid)=> PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length]);
+  if(window._catData) renderDonutInto('chartCat', window._catData, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], window._totalDespesasNet, (cid)=>{ const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
+  if(window._catDataR) renderDonutInto('chartCatR', window._catDataR, (cid)=> PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length], null, (cid)=>{ const c=catById(cid); return c?c.icon+' '+c.name:'Outros'; });
+  if(window._cardOverviewData) renderDonutInto('chartCardOverview', window._cardOverviewData, (cid)=> PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length], null, (cid)=>{ const c=cardById(cid); return c?c.name:'—'; });
   if(window._evoData) renderEvoBars('chartEvo', window._evoData);
   if(window._anoEvoData) renderEvoBars('chartAnoEvo', window._anoEvoData);
 }
