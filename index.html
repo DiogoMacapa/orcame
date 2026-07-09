@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-pendente-default-quickpay';
+const APP_VERSION = '2026.07.10-receitas-liquidas-consistente';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -795,7 +795,7 @@ function pagePainel(){
 
   // receitas por categoria
   const byCatR = {};
-  receitas.filter(t=>t.amount>0).forEach(t=>{ byCatR[t.category] = (byCatR[t.category]||0)+t.amount; });
+  receitas.filter(t=>t.amount>0).forEach(t=>{ byCatR[t.category] = (byCatR[t.category]||0)+netReceita(t); });
   const catEntriesR = Object.entries(byCatR).sort((a,b)=>b[1]-a[1]);
 
   // proximos vencimentos: cartões (dia de vencimento) + despesas fixas pendentes com dueDate
@@ -953,7 +953,7 @@ function pagePainel(){
         <div style="display:flex; gap:20px; align-items:center;">
           <div class="donut-wrap" id="chartCatR" style="width:150px;height:150px;flex-shrink:0;position:relative;"></div>
           <div style="flex:1; min-width:0;">
-            ${catEntriesR.map(([cid,val])=>{ const c=catById(cid); const pct=totalReceitas? (val/totalReceitas*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
+            ${catEntriesR.map(([cid,val])=>{ const c=catById(cid); const pct=totalLiquido? (val/totalLiquido*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
           </div>
         </div>`}
@@ -962,10 +962,10 @@ function pagePainel(){
         <div class="section-title"><h3>Top Origens de Receita</h3><span class="meta">quem/o que mais rende, no mês</span></div>
         ${(()=>{
           const byOrigin = {};
-          receitas.filter(t=>t.amount>0).forEach(t=>{ byOrigin[t.description] = (byOrigin[t.description]||0)+t.amount; });
+          receitas.filter(t=>t.amount>0).forEach(t=>{ byOrigin[t.description] = (byOrigin[t.description]||0)+netReceita(t); });
           const originEntries = Object.entries(byOrigin).sort((a,b)=>b[1]-a[1]).slice(0,8);
           if(originEntries.length===0) return emptyState('🧾','Nenhuma receita neste mês','As origens de receita aparecem aqui — útil pra ver, por exemplo, qual paciente ou cliente rende mais.');
-          return originEntries.map(([name,val])=>{ const pct=totalReceitas?(val/totalReceitas*100):0;
+          return originEntries.map(([name,val])=>{ const pct=totalLiquido?(val/totalLiquido*100):0;
             return `<div class="legend-row"><span class="legend-name">${esc(name)}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('');
         })()}
       </div>
@@ -1558,9 +1558,9 @@ function pageRelatorios(){
   receitas.forEach(t=>{
     const key = (t.description||'—').trim();
     if(!byOrig[key]) byOrig[key] = {count:0,total:0, category:t.category};
-    byOrig[key].count++; byOrig[key].total += t.amount;
+    byOrig[key].count++; byOrig[key].total += netReceita(t);
   });
-  const totalReceitasGeral = receitas.reduce((s,t)=>s+t.amount,0);
+  const totalReceitasGeral = receitas.reduce((s,t)=>s+netReceita(t),0);
   let origRows = Object.entries(byOrig).map(([name,v])=>({name,...v, pct: totalReceitasGeral?v.total/totalReceitasGeral*100:0}));
   origRows.sort((a,b)=>b.total-a.total);
 
