@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-export-search-health-shortcuts';
+const APP_VERSION = '2026.07.10-pending-recurring-quicklog';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -826,6 +826,23 @@ function pagePainel(){
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--info-tint);color:var(--info)">◈</span>SALDO</div><div class="stat-value">${fmtBRL(saldo)}</div><div class="stat-sub">receitas − despesas</div></div>
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>LUCRO LÍQUIDO</div><div class="stat-value">${fmtBRL(lucroLiquido)}</div><div class="stat-sub">após IR e repasses</div></div>
     </div>
+
+    ${(()=>{
+      const usedThisMonth = new Set(txMes.map(t=>normalizeMerchant(t.description)));
+      const pendentes = DB.templates.filter(tpl => !usedThisMonth.has(normalizeMerchant(tpl.title)));
+      if(DB.templates.length===0) return '';
+      return `<div class="card card-pad" style="margin-bottom:16px;">
+        <div class="section-title"><h3>Recorrentes deste mês</h3><span class="meta">${pendentes.length} ainda não lançado(s) de ${DB.templates.length}</span></div>
+        ${pendentes.length===0? `<div style="font-size:12.5px; color:var(--primary-dark); padding:8px 0;">🎉 Todos os recorrentes já foram lançados este mês.</div>` : `
+        <div class="grid g3" style="gap:8px;">
+        ${pendentes.map(tpl=>{ const c=catById(tpl.category);
+          return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px; border:1px solid var(--border); border-radius:9px;">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;"><span>${c?c.icon:(tpl.type==='receita'?'💰':'🧾')}</span><span style="font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(tpl.title)}</span></div>
+            <button class="btn btn-sm ${tpl.type==='receita'?'btn-outline':'btn-primary'}" onclick="quickLogTemplate('${tpl.id}')">+ Lançar</button>
+          </div>`; }).join('')}
+        </div>`}
+      </div>`;
+    })()}
 
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title"><h3>Indicadores de Saúde Financeira</h3><span class="meta">${monthLabel(m)}</span></div>
@@ -1701,7 +1718,12 @@ function closeModal(){ const m=document.getElementById('modalRoot'); if(m) m.rem
 function openTxModal(id, presetType){
   const t = id ? DB.tx.find(x=>x.id===id) : null;
   const type = t ? t.type : (presetType||'despesa');
-  state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:'pix', cardId:'', installmentCurrent:'', installmentTotal:'', recurring:false, status:'pago', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
+  let defPm = 'pix', defCard = '';
+  if(!t && type==='despesa'){
+    try{ defPm = localStorage.getItem('orcame:lastPm') || 'pix'; defCard = localStorage.getItem('orcame:lastCard') || ''; }catch(_){}
+    if(defCard && !DB.cards.find(c=>c.id===defCard)) defCard='';
+  }
+  state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pago', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
   renderTxModal();
 }
 function renderTxModal(){
@@ -1763,12 +1785,32 @@ function renderTxModal(){
         ${t.id?`<button class="btn btn-danger-ghost" onclick="deleteTx('${t.id}')">Excluir</button>`:''}
         <div style="flex:1"></div>
         <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        ${!t.id?`<button class="btn btn-outline" onclick="saveTx(true)">Salvar e lançar outro</button>`:''}
         <button class="btn btn-primary" onclick="saveTx()">Salvar</button>
       </div>
     </div>
   `);
 }
 function switchTxType(type){ state.editing.type = type; renderTxModal(); }
+function quickLogTemplate(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  if(!tpl) return;
+  if(tpl.defaultAmount && tpl.defaultAmount>0){
+    const obj = {
+      id: uid(), type: tpl.type, description: tpl.title, category: tpl.category, amount: Number(tpl.defaultAmount),
+      date: new Date().toISOString().slice(0,10), status: 'pago', paymentMethod: tpl.paymentMethod||'pix',
+      cardId: tpl.paymentMethod==='cartao' ? tpl.cardId : '', installmentCurrent:'', installmentTotal:'',
+      invoiceMonth: tpl.paymentMethod==='cartao' ? (state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0')) : '',
+      recurring: !!tpl.recurring, dueDate:'', notes:'',
+    };
+    if(tpl.type==='receita'){ obj.taxPercent=0; obj.repasseAmount=0; }
+    DB.tx.push(obj);
+    persist('tx').then(()=>{ toast(tpl.title+' lançado — '+fmtBRL(obj.amount)); renderPage(); });
+  } else {
+    openTxModal(null, tpl.type);
+    setTimeout(()=>applyTemplate(id), 0);
+  }
+}
 function applyTemplate(id){
   if(!id) return;
   const tpl = DB.templates.find(x=>x.id===id);
@@ -1790,7 +1832,7 @@ function updateNetPreview(){
   const net = Math.max(0, amt*(1-tax/100)-rep);
   const el = document.getElementById('netPreview'); if(el) el.innerHTML = 'Valor líquido: <b>'+fmtBRL(net)+'</b>';
 }
-function saveTx(){
+function saveTx(keepOpen){
   const desc = document.getElementById('f_desc').value.trim();
   const amount = parseFloat(document.getElementById('f_amount').value);
   if(!desc){ toast('Informe uma descrição','danger'); return; }
@@ -1820,7 +1862,18 @@ function saveTx(){
   const categoryChanged = wasEditingExisting && t.category !== obj.category;
   if(idx>=0) DB.tx[idx] = obj; else DB.tx.push(obj);
   if(obj.type==='despesa' && categoryChanged){ learnMerchantRule(obj.description, obj.category, 'despesa'); }
-  persist('tx').then(()=>{ closeModal(); toast('Transação salva'); renderPage(); });
+  if(obj.type==='despesa'){
+    try{ localStorage.setItem('orcame:lastPm', obj.paymentMethod); if(obj.cardId) localStorage.setItem('orcame:lastCard', obj.cardId); }catch(_){}
+  }
+  persist('tx').then(()=>{
+    toast('Transação salva');
+    if(keepOpen && !wasEditingExisting){
+      openTxModal(null, obj.type); // limpa o formulario mantendo tipo/cartao/forma de pagamento para o proximo lancamento
+      renderPage();
+    } else {
+      closeModal(); renderPage();
+    }
+  });
 }
 function deleteTx(id){
   confirmAction('Excluir esta transação?', ()=>{
