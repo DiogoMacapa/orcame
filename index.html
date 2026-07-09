@@ -290,7 +290,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.09-painel-cartoes-restructure';
+const APP_VERSION = '2026.07.09-visible-credits-progress-bars';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -724,9 +724,10 @@ function pagePainel(){
           <div style="flex:1; min-width:0;">
             ${catEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesas? (val/totalDespesas*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+            ${creditosMesTotal>0?`<div class="legend-row"><span class="legend-dot" style="background:var(--primary)"></span><span class="legend-name">🔄 Créditos/Estornos</span><span class="legend-pct"></span><span class="legend-val" style="color:var(--primary-dark);">−${fmtBRL(creditosMesTotal)}</span></div>
+            <div class="legend-row" style="border-top:2px solid var(--border); margin-top:2px; padding-top:8px;"><span class="legend-name" style="font-weight:700;">Total líquido (igual ao card acima)</span><span class="legend-pct"></span><span class="legend-val" style="font-weight:700;">${fmtBRL(totalDespesas)}</span></div>`:''}
           </div>
         </div>
-        ${creditosMesTotal>0?`<div style="font-size:11px; color:var(--text-faint); margin-top:10px; border-top:1px solid var(--surface-2); padding-top:8px;">Não inclui ${fmtBRL(creditosMesTotal)} em créditos/estornos do mês — esse valor já foi descontado no card "Despesas" acima.</div>`:''}
         `}
       </div>
       <div class="card card-pad">
@@ -764,9 +765,12 @@ function pagePainel(){
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title"><h3>Estabelecimentos nos Cartões (BTG + Revolut juntos)</h3><span class="meta">soma de todos os cartões, no mês</span></div>
       ${estCardEntries.length===0? emptyState('🛒','Nenhum gasto no cartão neste mês','Quando você importar faturas, aqui aparece cada loja somando os dois cartões — ex: Shopee usado no BTG e no Revolut vira um total só.') : `
-      <div class="grid g3" style="gap:8px;">
-      ${estCardEntries.map(([name,val])=>{ const pct = totalDespesasCartao? (val/totalDespesasCartao*100):0;
-        return `<div class="legend-row"><span class="legend-name">${esc(name)}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+      <div class="grid g2" style="gap:10px 24px;">
+      ${(()=>{ const maxVal = Math.max(...estCardEntries.map(e=>e[1]),1); return estCardEntries.map(([name,val],i)=>{ const pct = totalDespesasCartao? (val/totalDespesasCartao*100):0; const barPct = (val/maxVal*100); const color=PALETTE[i%PALETTE.length];
+        return `<div>
+          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span style="font-weight:600;">${esc(name)}</span><span style="font-family:var(--mono); color:var(--text-muted);">${pct.toFixed(1)}% · ${fmtBRL(val)}</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${barPct}%; background:${color}"></div></div>
+        </div>`; }).join(''); })()}
       </div>`}
     </div>
 
