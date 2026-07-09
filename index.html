@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-receita-liquida-kpi';
+const APP_VERSION = '2026.07.10-atendimentos-por-sessao';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -382,6 +382,11 @@ const toDbRow = {
     id:t.id, type:t.type, title:t.title, category:t.category||null,
     default_amount:(t.defaultAmount===''||t.defaultAmount==null)?null:Number(t.defaultAmount),
     payment_method:t.paymentMethod||null, card_id:t.cardId||null, recurring:!!t.recurring,
+    billing_mode: t.billingMode || 'fixo',
+    session_rate: (t.sessionRate===''||t.sessionRate==null)?null:Number(t.sessionRate),
+    ir_percent: (t.irPercent===''||t.irPercent==null)?null:Number(t.irPercent),
+    repasse_percent: (t.repassePercent===''||t.repassePercent==null)?null:Number(t.repassePercent),
+    services: (t.services && t.services.length) ? t.services : null,
   }),
   merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
 };
@@ -408,6 +413,11 @@ const fromDbRow = {
   templates: r => ({
     id:r.id, type:r.type, title:r.title, category:r.category||'', defaultAmount:r.default_amount==null?'':r.default_amount,
     paymentMethod:r.payment_method||'', cardId:r.card_id||'', recurring:!!r.recurring,
+    billingMode: r.billing_mode || 'fixo',
+    sessionRate: r.session_rate==null?'':r.session_rate,
+    irPercent: r.ir_percent==null?'':r.ir_percent,
+    repassePercent: r.repasse_percent==null?'':r.repasse_percent,
+    services: r.services || [],
   }),
   merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
 };
@@ -828,8 +838,8 @@ function pagePainel(){
     </div>
 
     ${(()=>{
-      const usedThisMonth = new Set(txMes.map(t=>normalizeMerchant(t.description)));
-      const pendentes = DB.templates.filter(tpl => !usedThisMonth.has(normalizeMerchant(tpl.title)));
+      const usedDescsThisMonth = txMes.map(t=>normalizeMerchant(t.description));
+      const pendentes = DB.templates.filter(tpl => !usedDescsThisMonth.some(d=>d.includes(normalizeMerchant(tpl.title))));
       if(DB.templates.length===0) return '';
       return `<div class="card card-pad" style="margin-bottom:16px;">
         <div class="section-title"><h3>Recorrentes deste mês</h3><span class="meta">${pendentes.length} ainda não lançado(s) de ${DB.templates.length}</span></div>
@@ -1259,9 +1269,13 @@ function pageRecorrentes(){
     <div class="cat-grid">
       ${list.map(t=>{
         const c = catById(t.category);
+        let sub = c?esc(c.name):'';
+        if(t.billingMode==='atendimento'){ sub += ` · ${fmtBRL(t.sessionRate)}/atend. · IR ${t.irPercent}%${(t.repassePercent!=='' && t.repassePercent!=null)?' · repasse '+t.repassePercent+'%':''}`; }
+        else if(t.billingMode==='multiplo'){ sub += ` · ${(t.services||[]).length} serviço(s) · IR ${t.irPercent}% · repasse ${t.repassePercent}%`; }
+        else if(t.defaultAmount){ sub += ' · '+fmtBRL(t.defaultAmount); }
         return `<div class="cat-tile">
           <div class="ic">${c?c.icon:'🔁'}</div>
-          <div style="flex:1"><div class="nm">${esc(t.title)}</div><div style="font-size:11.5px;color:var(--text-faint)">${c?esc(c.name):''}${t.defaultAmount?' · '+fmtBRL(t.defaultAmount):''}</div></div>
+          <div style="flex:1; min-width:0;"><div class="nm">${esc(t.title)}</div><div style="font-size:11.5px;color:var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${sub}</div></div>
           <div class="edit-mini"><button onclick="openTemplateModal('${t.id}')">✎</button><button onclick="deleteTemplate('${t.id}')">🗑</button></div>
         </div>`;
       }).join('')}
@@ -1270,12 +1284,13 @@ function pageRecorrentes(){
 }
 function openTemplateModal(id){
   const t = id ? DB.templates.find(x=>x.id===id) : null;
-  state.editing = t ? {...t} : {id:null, type:state.tplTab||'despesa', title:'', category:'', defaultAmount:'', paymentMethod:'pix', cardId:'', recurring:true};
+  state.editing = t ? {...t, services: (t.services||[]).map(s=>({...s}))} : {id:null, type:state.tplTab||'despesa', title:'', category:'', defaultAmount:'', paymentMethod:'pix', cardId:'', recurring:true, billingMode:'fixo', sessionRate:'', irPercent:'', repassePercent:'', services:[]};
   renderTemplateModal();
 }
 function renderTemplateModal(){
   const t = state.editing;
   const cats = catsFor(t.type);
+  const bm = t.billingMode || 'fixo';
   openModal(`
     <div class="modal">
       <div class="modal-head"><h3>${t.id?'Editar':'Novo'} recorrente</h3><button class="close-x" onclick="closeModal()">✕</button></div>
@@ -1284,11 +1299,45 @@ function renderTemplateModal(){
           <button class="${t.type==='despesa'?'on':''}" onclick="state.editing.type='despesa'; renderTemplateModal();">Despesa</button>
           <button class="${t.type==='receita'?'on':''}" onclick="state.editing.type='receita'; renderTemplateModal();">Receita</button>
         </div></div>
-        <div class="field"><label>Nome (ex: nome do paciente, ou "Aluguel")</label><input class="input full" id="f_tpltitle" value="${esc(t.title)}" placeholder="${t.type==='receita'?'Ex: Serra, Camila...':'Ex: Aluguel, TV, Internet...'}"></div>
-        <div class="row2">
-          <div class="field"><label>Categoria</label><select class="select full" id="f_tplcat">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
-          <div class="field"><label>Valor padrão (opcional)</label><input class="input full" id="f_tplamount" type="number" step="0.01" value="${t.defaultAmount}" placeholder="deixe em branco se variar"></div>
+        <div class="field"><label>Nome (ex: nome do paciente, ou "Aluguel")</label><input class="input full" id="f_tpltitle" value="${esc(t.title)}" placeholder="${t.type==='receita'?'Ex: Serra, Camila, Foco...':'Ex: Aluguel, TV, Internet...'}"></div>
+        <div class="field"><label>Categoria</label><select class="select full" id="f_tplcat">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+
+        ${t.type==='receita' ? `
+        <div class="field"><label>Como calcular o valor ao lançar?</label><div class="seg">
+          <button class="${bm==='fixo'?'on':''}" onclick="state.editing.billingMode='fixo'; renderTemplateModal();">Valor fixo</button>
+          <button class="${bm==='atendimento'?'on':''}" onclick="state.editing.billingMode='atendimento'; renderTemplateModal();">Por atendimento</button>
+          <button class="${bm==='multiplo'?'on':''}" onclick="state.editing.billingMode='multiplo'; renderTemplateModal();">Múltiplos serviços</button>
+        </div></div>
+        ` : ''}
+
+        ${(t.type==='despesa' || bm==='fixo') ? `
+        <div class="field"><label>Valor padrão (opcional)</label><input class="input full" id="f_tplamount" type="number" step="0.01" value="${t.defaultAmount}" placeholder="deixe em branco se variar"></div>
+        ` : ''}
+
+        ${(t.type==='receita' && bm==='atendimento') ? `
+        <div class="hint-box">Ao lançar pelo Painel, você só vai digitar a quantidade de atendimentos (e o repasse, se não for percentual).</div>
+        <div class="row3">
+          <div class="field"><label>Valor por atendimento</label><input class="input full" id="f_tplsessionrate" type="number" step="0.01" value="${t.sessionRate}" placeholder="Ex: 250,00"></div>
+          <div class="field"><label>IR (%)</label><input class="input full" id="f_tplir" type="number" step="0.01" value="${t.irPercent}" placeholder="Ex: 15"></div>
+          <div class="field"><label>Repasse (%, opcional)</label><input class="input full" id="f_tplrepassepct" type="number" step="0.01" value="${t.repassePercent}" placeholder="deixe em branco p/ digitar na hora"></div>
         </div>
+        ` : ''}
+
+        ${(t.type==='receita' && bm==='multiplo') ? `
+        <div class="hint-box">Cadastre cada tipo de serviço com seu valor fixo. Ao lançar, você só informa a quantidade de cada um.</div>
+        <div id="tplServicesList">
+          ${(t.services||[]).map((s,i)=>`<div class="row2" style="margin-bottom:8px;">
+            <div class="field" style="margin-bottom:0;"><input class="input full" placeholder="Nome do serviço (ex: Fisioterapia)" value="${esc(s.name||'')}" onchange="state.editing.services[${i}].name=this.value;"></div>
+            <div class="field" style="margin-bottom:0; display:flex; gap:6px;"><input class="input full" type="number" step="0.01" placeholder="Valor" value="${s.rate||''}" onchange="state.editing.services[${i}].rate=this.value;"><button class="btn btn-sm btn-ghost" onclick="state.editing.services.splice(${i},1); renderTemplateModal();">🗑</button></div>
+          </div>`).join('')}
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="state.editing.services.push({name:'',rate:''}); renderTemplateModal();">+ Adicionar serviço</button>
+        <div class="row2" style="margin-top:14px;">
+          <div class="field"><label>IR (%)</label><input class="input full" id="f_tplir" type="number" step="0.01" value="${t.irPercent}" placeholder="Ex: 15"></div>
+          <div class="field"><label>Repasse sobre o pós-IR (%)</label><input class="input full" id="f_tplrepassepct" type="number" step="0.01" value="${t.repassePercent}" placeholder="Ex: 30"></div>
+        </div>
+        ` : ''}
+
         <div class="field"><label>Forma de pagamento padrão</label><select class="select full" id="f_tplpm" onchange="toggleTplCardField()">
           <option value="pix" ${t.paymentMethod==='pix'?'selected':''}>Pix</option>
           <option value="cartao" ${t.paymentMethod==='cartao'?'selected':''}>Cartão de crédito</option>
@@ -1314,13 +1363,25 @@ function saveTemplate(){
   const title = document.getElementById('f_tpltitle').value.trim();
   if(!title){ toast('Informe um nome','danger'); return; }
   const t = state.editing;
+  const bm = t.type==='receita' ? (t.billingMode||'fixo') : 'fixo';
   const pm = document.getElementById('f_tplpm').value;
   const obj = {
     id:t.id||uid(), type:t.type, title, category:document.getElementById('f_tplcat').value,
-    defaultAmount: parseFloat(document.getElementById('f_tplamount').value)||'',
     paymentMethod: pm, cardId: pm==='cartao' ? document.getElementById('f_tplcard').value : '',
     recurring: document.getElementById('f_tplrecurring').checked,
+    billingMode: bm, defaultAmount:'', sessionRate:'', irPercent:'', repassePercent:'', services:[],
   };
+  if(bm==='fixo'){
+    obj.defaultAmount = parseFloat(document.getElementById('f_tplamount').value)||'';
+  } else if(bm==='atendimento'){
+    obj.sessionRate = parseFloat(document.getElementById('f_tplsessionrate').value)||0;
+    obj.irPercent = parseFloat(document.getElementById('f_tplir').value)||0;
+    obj.repassePercent = document.getElementById('f_tplrepassepct').value!=='' ? parseFloat(document.getElementById('f_tplrepassepct').value) : '';
+  } else if(bm==='multiplo'){
+    obj.services = (state.editing.services||[]).filter(s=>s.name && s.rate).map(s=>({name:s.name.trim(), rate:parseFloat(s.rate)||0}));
+    obj.irPercent = parseFloat(document.getElementById('f_tplir').value)||0;
+    obj.repassePercent = parseFloat(document.getElementById('f_tplrepassepct').value)||0;
+  }
   const idx = DB.templates.findIndex(x=>x.id===obj.id);
   if(idx>=0) DB.templates[idx]=obj; else DB.templates.push(obj);
   persist('templates').then(()=>{ closeModal(); toast('Recorrente salvo'); renderPage(); });
@@ -1328,6 +1389,7 @@ function saveTemplate(){
 function deleteTemplate(id){
   confirmAction('Excluir este recorrente?', ()=>{
     DB.templates = DB.templates.filter(t=>t.id!==id);
+
     persist('templates').then(()=>{ closeModal(); toast('Recorrente excluído'); renderPage(); });
   });
 }
@@ -1795,6 +1857,9 @@ function switchTxType(type){ state.editing.type = type; renderTxModal(); }
 function quickLogTemplate(id){
   const tpl = DB.templates.find(x=>x.id===id);
   if(!tpl) return;
+  const bm = tpl.billingMode || 'fixo';
+  if(bm==='atendimento') return openAtendimentoModal(id);
+  if(bm==='multiplo') return openMultiploModal(id);
   if(tpl.defaultAmount && tpl.defaultAmount>0){
     const obj = {
       id: uid(), type: tpl.type, description: tpl.title, category: tpl.category, amount: Number(tpl.defaultAmount),
@@ -1810,6 +1875,111 @@ function quickLogTemplate(id){
     openTxModal(null, tpl.type);
     setTimeout(()=>applyTemplate(id), 0);
   }
+}
+function openAtendimentoModal(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  if(!tpl) return;
+  openModal(`
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Quantidade de atendimentos</label><input class="input full" id="f_atQtd" type="number" min="1" value="1" oninput="updateAtendimentoPreview('${id}')"></div>
+        ${(tpl.repassePercent==='' || tpl.repassePercent==null) ? `
+        <div class="field"><label>Valor do repasse (R$)</label><input class="input full" id="f_atRepasse" type="number" step="0.01" value="0" oninput="updateAtendimentoPreview('${id}')"></div>
+        ` : `<input type="hidden" id="f_atRepasse" value="">`}
+        <div class="field"><label>Data</label><input class="input full" id="f_atDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="net-preview" id="atendimentoPreview"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmAtendimento('${id}')">Lançar</button>
+      </div>
+    </div>
+  `);
+  updateAtendimentoPreview(id);
+}
+function computeAtendimento(tpl, qtd, repasseManual){
+  const gross = qtd * Number(tpl.sessionRate||0);
+  const posIr = gross * (1 - (Number(tpl.irPercent)||0)/100);
+  let repasse;
+  if(tpl.repassePercent!=='' && tpl.repassePercent!=null){ repasse = posIr * (Number(tpl.repassePercent)/100); }
+  else { repasse = Number(repasseManual)||0; }
+  const liquido = posIr - repasse;
+  return {gross, repasse, liquido};
+}
+function updateAtendimentoPreview(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
+  const repasseEl = document.getElementById('f_atRepasse');
+  const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0);
+  const el = document.getElementById('atendimentoPreview');
+  if(el) el.innerHTML = `${qtd} atendimento(s) × ${fmtBRL(tpl.sessionRate)} = <b>${fmtBRL(r.gross)}</b><br>IR ${tpl.irPercent}% + repasse ${fmtBRL(r.repasse)} → líquido: <b>${fmtBRL(r.liquido)}</b>`;
+}
+function confirmAtendimento(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
+  if(qtd<=0){ toast('Informe uma quantidade válida','danger'); return; }
+  const repasseEl = document.getElementById('f_atRepasse');
+  const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0);
+  const obj = {
+    id: uid(), type:'receita', description: tpl.title+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
+    amount: r.gross, date: document.getElementById('f_atDate').value, status:'pago',
+    paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
+    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
+    taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
+  };
+  DB.tx.push(obj);
+  persist('tx').then(()=>{ closeModal(); toast(tpl.title+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
+}
+function openMultiploModal(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  if(!tpl || !tpl.services || tpl.services.length===0){ toast('Esse recorrente não tem serviços cadastrados','danger'); return; }
+  openModal(`
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        ${tpl.services.map((s,i)=>`<div class="field"><label>${esc(s.name)} (${fmtBRL(s.rate)} cada)</label><input class="input full" id="f_mqtd_${i}" type="number" min="0" value="0" oninput="updateMultiploPreview('${id}')"></div>`).join('')}
+        <div class="field"><label>Data</label><input class="input full" id="f_mDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="net-preview" id="multiploPreview"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmMultiplo('${id}')">Lançar</button>
+      </div>
+    </div>
+  `);
+  updateMultiploPreview(id);
+}
+function computeMultiplo(tpl){
+  let gross = 0; const parts = [];
+  tpl.services.forEach((s,i)=>{
+    const qtd = parseInt(document.getElementById('f_mqtd_'+i)?.value)||0;
+    if(qtd>0){ const sub = qtd*Number(s.rate); gross += sub; parts.push(qtd+'x '+s.name); }
+  });
+  const posIr = gross * (1 - (Number(tpl.irPercent)||0)/100);
+  const repasse = posIr * (Number(tpl.repassePercent)||0)/100;
+  const liquido = posIr - repasse;
+  return {gross, repasse, liquido, parts};
+}
+function updateMultiploPreview(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  const r = computeMultiplo(tpl);
+  const el = document.getElementById('multiploPreview');
+  if(el) el.innerHTML = `${r.parts.join(' + ')||'—'} = <b>${fmtBRL(r.gross)}</b><br>IR ${tpl.irPercent}% − repasse ${tpl.repassePercent}% do pós-IR → líquido: <b>${fmtBRL(r.liquido)}</b>`;
+}
+function confirmMultiplo(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  const r = computeMultiplo(tpl);
+  if(r.gross<=0){ toast('Informe ao menos uma quantidade','danger'); return; }
+  const obj = {
+    id: uid(), type:'receita', description: tpl.title+' ('+r.parts.join(', ')+')', category: tpl.category,
+    amount: r.gross, date: document.getElementById('f_mDate').value, status:'pago',
+    paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
+    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
+    taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
+  };
+  DB.tx.push(obj);
+  persist('tx').then(()=>{ closeModal(); toast(tpl.title+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
 }
 function applyTemplate(id){
   if(!id) return;
