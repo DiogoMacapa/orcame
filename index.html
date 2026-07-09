@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-pending-recurring-quicklog';
+const APP_VERSION = '2026.07.10-receita-liquida-kpi';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -821,10 +821,10 @@ function pagePainel(){
     </div>
 
     <div class="grid g4" style="margin-bottom:16px;">
-      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--primary-tint);color:var(--primary-dark)">↗</span>RECEITAS</div><div class="stat-value up">${fmtBRL(totalReceitas)}</div><div class="stat-sub">${receitas.length} lançamento(s)</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--primary-tint);color:var(--primary-dark)">↗</span>RECEITAS</div><div class="stat-value up">${fmtBRL(totalLiquido)}</div><div class="stat-sub">líquido, após IR e repasses</div></div>
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--danger-tint);color:var(--danger)">↘</span>DESPESAS</div><div class="stat-value down">${fmtBRL(totalDespesas)}</div><div class="stat-sub">${despesas.length} lançamento(s)</div></div>
-      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--info-tint);color:var(--info)">◈</span>SALDO</div><div class="stat-value">${fmtBRL(saldo)}</div><div class="stat-sub">receitas − despesas</div></div>
-      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>LUCRO LÍQUIDO</div><div class="stat-value">${fmtBRL(lucroLiquido)}</div><div class="stat-sub">após IR e repasses</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--info-tint);color:var(--info)">◈</span>SALDO</div><div class="stat-value">${fmtBRL(lucroLiquido)}</div><div class="stat-sub">receitas líquidas − despesas</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>RECEITA BRUTA</div><div class="stat-value">${fmtBRL(totalReceitas)}</div><div class="stat-sub">${receitas.length} lançamento(s), antes de IR/repasses</div></div>
     </div>
 
     ${(()=>{
@@ -847,7 +847,7 @@ function pagePainel(){
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title"><h3>Indicadores de Saúde Financeira</h3><span class="meta">${monthLabel(m)}</span></div>
       ${(()=>{
-        const taxaPoupanca = totalReceitas>0 ? ((totalReceitas-totalDespesas)/totalReceitas*100) : null;
+        const taxaPoupanca = totalLiquido>0 ? ((totalLiquido-totalDespesas)/totalLiquido*100) : null;
         const essencial = despesas.filter(t=>t.amount>0 && ESSENTIAL_CATS.includes(t.category)).reduce((s,t)=>s+t.amount,0);
         const superfluo = despesas.filter(t=>t.amount>0 && !ESSENTIAL_CATS.includes(t.category) && t.category!=='c-estornos-d').reduce((s,t)=>s+t.amount,0);
         const totalEssSup = essencial+superfluo;
