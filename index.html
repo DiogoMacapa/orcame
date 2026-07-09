@@ -275,6 +275,7 @@ a{color:inherit;}
 /* ============================ STATE & STORAGE ============================ */
 const STORAGE_KEYS = { tx:'orcame:transactions', cards:'orcame:cards', cats:'orcame:categories', goals:'orcame:goals', templates:'orcame:templates' };
 
+const ESSENTIAL_CATS = ['c-moradia','c-transporte','c-alimentacao','c-saude','c-servicos','c-educacao'];
 const DEFAULT_CATS = [
   {id:'c-moradia', type:'despesa', name:'Moradia', icon:'🏠'},
   {id:'c-transporte', type:'despesa', name:'Transporte', icon:'🚗'},
@@ -295,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.09-tooltips-everywhere';
+const APP_VERSION = '2026.07.10-export-search-health-shortcuts';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -538,6 +539,75 @@ function checkAutoBackup(){
   try{ localStorage.setItem('orcame:lastBackupMonth', mk); }catch(_){}
   toast('Backup mensal automático baixado 📥');
 }
+function exportTransactionsCSV(){
+  const rows = [['Data','Tipo','Descrição','Categoria','Forma de Pagamento','Cartão','Parcela','Status','Valor','Observações']];
+  DB.tx.forEach(t=>{
+    const c = catById(t.category); const card = t.cardId?cardById(t.cardId):null;
+    rows.push([
+      fmtDateFull(t.date), t.type==='receita'?'Receita':'Despesa', t.description, c?c.name:'',
+      t.paymentMethod||'', card?card.name:'', t.installmentTotal?`${t.installmentCurrent}/${t.installmentTotal}`:'',
+      t.status||'', String(t.amount).replace('.',','), t.notes||''
+    ]);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'orcame-transacoes-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('CSV exportado — abre direto no Excel');
+}
+function exportPainelReport(){
+  const m = state.month;
+  const txMes = DB.tx.filter(t=>inSelectedMonth(t, m));
+  const receitas = txMes.filter(t=>t.type==='receita' && t.amount>0);
+  const despesas = txMes.filter(t=>t.type==='despesa' && t.amount>0);
+  const totalReceitas = receitas.reduce((s,t)=>s+t.amount,0);
+  const totalDespesasNet = txMes.filter(t=>t.type==='despesa').reduce((s,t)=>s+t.amount,0);
+  const byCat = {};
+  despesas.forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  const catRows = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const totalDespGross = despesas.reduce((s,t)=>s+t.amount,0);
+
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html><head><meta charset="utf-8"><title>orça•me — Relatório ${monthLabel(m)}</title>
+    <style>
+      body{font-family:Arial,sans-serif; padding:36px; color:#171B21; max-width:820px; margin:0 auto;}
+      h1{font-size:22px; margin-bottom:2px;} .sub{color:#6B7280; font-size:13px; margin-bottom:24px;}
+      .kpis{display:flex; gap:16px; margin-bottom:28px;}
+      .kpi{flex:1; border:1px solid #E4E7EC; border-radius:10px; padding:14px;}
+      .kpi .lbl{font-size:10px; text-transform:uppercase; color:#6B7280; margin-bottom:4px;}
+      .kpi .val{font-size:19px; font-weight:700;}
+      table{width:100%; border-collapse:collapse; margin-bottom:28px; font-size:12.5px;}
+      th{text-align:left; font-size:10px; text-transform:uppercase; color:#6B7280; border-bottom:1px solid #E4E7EC; padding:6px 8px;}
+      td{padding:7px 8px; border-bottom:1px solid #F0F1F3;}
+      .right{text-align:right;} h2{font-size:15px; margin:24px 0 10px;}
+      @media print{ .noprint{display:none;} }
+    </style></head><body>
+    <button class="noprint" onclick="window.print()" style="margin-bottom:20px; padding:8px 16px; background:#0EA972; color:#fff; border:none; border-radius:8px; cursor:pointer;">🖨️ Salvar como PDF</button>
+    <h1>orça•me — Relatório Financeiro</h1>
+    <div class="sub">${monthLabel(m)} · gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">Receitas</div><div class="val">${fmtBRL(totalReceitas)}</div></div>
+      <div class="kpi"><div class="lbl">Despesas (líquido)</div><div class="val">${fmtBRL(totalDespesasNet)}</div></div>
+      <div class="kpi"><div class="lbl">Saldo</div><div class="val">${fmtBRL(totalReceitas-totalDespesasNet)}</div></div>
+    </div>
+    <h2>Despesas por Categoria</h2>
+    <table><thead><tr><th>Categoria</th><th class="right">% do total</th><th class="right">Valor</th></tr></thead><tbody>
+      ${catRows.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespGross?(val/totalDespGross*100):0;
+        return `<tr><td>${c?esc(c.name):'Outros'}</td><td class="right">${pct.toFixed(1)}%</td><td class="right">${fmtBRL(val)}</td></tr>`; }).join('')}
+    </tbody></table>
+    <h2>Transações do Mês (${txMes.length})</h2>
+    <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="right">Valor</th></tr></thead><tbody>
+      ${txMes.sort((a,b)=>parseISO(b.date)-parseISO(a.date)).map(t=>{ const c=catById(t.category);
+        return `<tr><td>${fmtDateShort(t.date)}</td><td>${esc(t.description)}</td><td>${c?esc(c.name):''}</td><td class="right">${t.type==='receita'?'+':''}${fmtBRL(t.amount)}</td></tr>`; }).join('')}
+    </tbody></table>
+    </body></html>
+  `);
+  win.document.close();
+}
 function exportBackup(){
   const backup = { exportedAt: new Date().toISOString(), version: APP_VERSION, data: DB };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
@@ -651,6 +721,11 @@ function render(){
       <div class="topbar">
         <div class="searchbox">🔎<input id="globalSearch" placeholder="Buscar transações, cartões..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
         <div style="flex:1"></div>
+        <div style="font-size:11px; color:var(--text-faint); margin-right:14px; display:flex; gap:10px;" title="Atalhos de teclado">
+          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">N</kbd> despesa</span>
+          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">R</kbd> receita</span>
+          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">/</kbd> buscar</span>
+        </div>
         <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
       </div>
       <div class="content" id="content"></div>
@@ -742,7 +817,7 @@ function pagePainel(){
   return `
     <div class="page-head">
       <div><h1>Painel</h1><p>Visão geral das suas finanças</p></div>
-      <div class="head-actions">${monthNav()}<button class="btn btn-primary" onclick="openTxModal(null,'despesa')">⚡ Lançar gasto</button></div>
+      <div class="head-actions">${monthNav()}<button class="btn btn-outline" onclick="exportPainelReport()">📄 Exportar Relatório</button><button class="btn btn-primary" onclick="openTxModal(null,'despesa')">⚡ Lançar gasto</button></div>
     </div>
 
     <div class="grid g4" style="margin-bottom:16px;">
@@ -750,6 +825,34 @@ function pagePainel(){
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--danger-tint);color:var(--danger)">↘</span>DESPESAS</div><div class="stat-value down">${fmtBRL(totalDespesas)}</div><div class="stat-sub">${despesas.length} lançamento(s)</div></div>
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--info-tint);color:var(--info)">◈</span>SALDO</div><div class="stat-value">${fmtBRL(saldo)}</div><div class="stat-sub">receitas − despesas</div></div>
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>LUCRO LÍQUIDO</div><div class="stat-value">${fmtBRL(lucroLiquido)}</div><div class="stat-sub">após IR e repasses</div></div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="section-title"><h3>Indicadores de Saúde Financeira</h3><span class="meta">${monthLabel(m)}</span></div>
+      ${(()=>{
+        const taxaPoupanca = totalReceitas>0 ? ((totalReceitas-totalDespesas)/totalReceitas*100) : null;
+        const essencial = despesas.filter(t=>t.amount>0 && ESSENTIAL_CATS.includes(t.category)).reduce((s,t)=>s+t.amount,0);
+        const superfluo = despesas.filter(t=>t.amount>0 && !ESSENTIAL_CATS.includes(t.category) && t.category!=='c-estornos-d').reduce((s,t)=>s+t.amount,0);
+        const totalEssSup = essencial+superfluo;
+        const pctEss = totalEssSup? (essencial/totalEssSup*100):0;
+        const poupColor = taxaPoupanca==null?'var(--text-faint)':taxaPoupanca<0?'var(--danger)':taxaPoupanca<10?'var(--warning)':'var(--primary)';
+        return `<div class="grid g2" style="gap:20px;">
+          <div>
+            <div style="font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Taxa de poupança do mês</div>
+            <div style="font-family:var(--mono); font-size:26px; font-weight:700; color:${poupColor};">${taxaPoupanca==null?'—':taxaPoupanca.toFixed(1)+'%'}</div>
+            <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${taxaPoupanca==null?'sem receitas lançadas este mês':(taxaPoupanca>=0?'do que entrou, sobrou '+taxaPoupanca.toFixed(1)+'%':'você gastou '+Math.abs(taxaPoupanca).toFixed(1)+'% a mais do que recebeu')}</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Essencial vs. Supérfluo</div>
+            ${totalEssSup===0? `<div style="font-size:12.5px; color:var(--text-faint);">Sem despesas categorizadas este mês</div>` : `
+            <div class="progress-track oc-hoverable" style="height:14px;" data-tip-label="Essencial" data-tip-pct="${pctEss.toFixed(1)}%" data-tip-value="${esc(fmtBRL(essencial))}"><div class="progress-fill" style="width:${pctEss}%; background:var(--info);"></div></div>
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-top:6px;">
+              <span>🔵 Essencial: ${pctEss.toFixed(0)}% (${fmtBRL(essencial)})</span>
+              <span>⚪ Supérfluo: ${(100-pctEss).toFixed(0)}% (${fmtBRL(superfluo)})</span>
+            </div>`}
+          </div>
+        </div>`;
+      })()}
     </div>
 
     <div class="grid g2" style="margin-bottom:16px;">
@@ -897,6 +1000,8 @@ function pageTransacoes(){
   if(state.txFilterType!=='todos') list = list.filter(t=>t.type===state.txFilterType);
   if(state.txFilterStatus!=='todos') list = list.filter(t=>t.status===state.txFilterStatus);
   if(state.txFilterCard!=='todos') list = list.filter(t=>t.cardId===state.txFilterCard);
+  if(state.txFilterMin!=null && state.txFilterMin!=='') list = list.filter(t=>Math.abs(t.amount)>=parseFloat(state.txFilterMin));
+  if(state.txFilterMax!=null && state.txFilterMax!=='') list = list.filter(t=>Math.abs(t.amount)<=parseFloat(state.txFilterMax));
   if(state.search.trim()){
     const q = state.search.toLowerCase();
     list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
@@ -912,7 +1017,7 @@ function pageTransacoes(){
       </div>
     </div>
     <div class="filters-bar">
-      <div class="search-inline">🔎<input placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
+      <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
       <select class="select" onchange="state.txFilterType=this.value; renderPage();">
         <option value="todos" ${state.txFilterType==='todos'?'selected':''}>Todos os tipos</option>
         <option value="receita" ${state.txFilterType==='receita'?'selected':''}>Receitas</option>
@@ -927,6 +1032,11 @@ function pageTransacoes(){
         <option value="todos">Cartão: todos</option>
         ${DB.cards.map(c=>`<option value="${c.id}" ${state.txFilterCard===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
       </select>
+      <input class="input" type="number" step="0.01" placeholder="Valor mín." style="width:110px;" value="${state.txFilterMin||''}" onchange="state.txFilterMin=this.value; renderPage();">
+      <input class="input" type="number" step="0.01" placeholder="Valor máx." style="width:110px;" value="${state.txFilterMax||''}" onchange="state.txFilterMax=this.value; renderPage();">
+      ${(state.txFilterMin||state.txFilterMax)?`<button class="btn btn-sm btn-ghost" onclick="state.txFilterMin=''; state.txFilterMax=''; renderPage();">✕ limpar valores</button>`:''}
+      <div style="flex:1"></div>
+      <button class="btn btn-outline" onclick="exportTransactionsCSV()">⬇️ Exportar CSV</button>
     </div>
     ${list.length>0? `<div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
       <label class="checkline" style="margin-right:4px;"><input type="checkbox" ${list.length>0 && list.every(t=>state.selectedTx&&state.selectedTx.has(t.id))?'checked':''} onchange="toggleSelectAllVisible(${JSON.stringify(list.map(t=>t.id)).replace(/"/g,"'")})"> Selecionar todas</label>
@@ -2174,6 +2284,20 @@ function confirmImport(){
 }
 
 /* ============================ INIT ============================ */
+document.addEventListener('keydown', function(e){
+  const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+  const typing = tag==='input' || tag==='textarea' || tag==='select';
+  if(e.key==='Escape'){
+    const confirmRoot = document.getElementById('confirmRoot'); if(confirmRoot){ confirmRoot.remove(); return; }
+    const modalRoot = document.getElementById('modalRoot'); if(modalRoot){ closeModal(); return; }
+    const alertsPanel = document.getElementById('alertsPanel'); if(alertsPanel){ alertsPanel.remove(); return; }
+    return;
+  }
+  if(typing || document.getElementById('modalRoot')) return;
+  if(e.key==='n' || e.key==='N'){ e.preventDefault(); openTxModal(null,'despesa'); }
+  else if(e.key==='r' || e.key==='R'){ e.preventDefault(); openTxModal(null,'receita'); }
+  else if(e.key==='/'){ e.preventDefault(); const s=document.getElementById('globalSearch'); if(s) s.focus(); }
+});
 (async function init(){
   try{
     await loadAll();
