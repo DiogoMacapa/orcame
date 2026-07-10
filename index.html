@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-sync-incremental';
+const APP_VERSION = '2026.07.10-extrato-cartoes-separado';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -759,7 +759,7 @@ function render(){
   renderPage();
 }
 
-function nav(page){ state.page=page; state.editing=null; render(); }
+function nav(page){ state.page=page; state.editing=null; if(page==='cartoes') state.cartoesView='grid'; render(); }
 function onSearch(v){ state.search=v; if(state.page!=='painel'){ renderPage(); } }
 
 function renderPage(){
@@ -1037,8 +1037,10 @@ function toggleSelectAllVisible(ids){
 }
 
 /* ============================ TRANSAÇÕES ============================ */
-function pageTransacoes(){
+function getFilteredTxList(scope){
   let list = [...DB.tx];
+  if(scope==='cartao') list = list.filter(t=>t.paymentMethod==='cartao');
+  else if(scope==='nao-cartao') list = list.filter(t=>t.paymentMethod!=='cartao');
   if(state.txFilterType!=='todos') list = list.filter(t=>t.type===state.txFilterType);
   if(state.txFilterStatus!=='todos') list = list.filter(t=>t.status===state.txFilterStatus);
   if(state.txFilterCard!=='todos') list = list.filter(t=>t.cardId===state.txFilterCard);
@@ -1049,15 +1051,12 @@ function pageTransacoes(){
     list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
   }
   list.sort((a,b)=>parseISO(b.date)-parseISO(a.date));
-
+  return list;
+}
+function renderTxFiltersAndList(scope, opts){
+  opts = opts || {};
+  const list = getFilteredTxList(scope);
   return `
-    <div class="page-head">
-      <div><h1>Transações</h1><p>${list.length} registro(s)</p></div>
-      <div class="head-actions">
-        <button class="btn btn-outline" onclick="openImportModal()">📄 Importar fatura (PDF)</button>
-        <button class="btn btn-primary" onclick="openTxModal(null)">+ Nova</button>
-      </div>
-    </div>
     <div class="filters-bar">
       <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
       <select class="select" onchange="state.txFilterType=this.value; renderPage();">
@@ -1070,10 +1069,10 @@ function pageTransacoes(){
         <option value="pendente" ${state.txFilterStatus==='pendente'?'selected':''}>Pendente</option>
         <option value="pago" ${state.txFilterStatus==='pago'?'selected':''}>Pago/Recebido</option>
       </select>
-      <select class="select" onchange="state.txFilterCard=this.value; renderPage();">
+      ${opts.showCardFilter?`<select class="select" onchange="state.txFilterCard=this.value; renderPage();">
         <option value="todos">Cartão: todos</option>
         ${DB.cards.map(c=>`<option value="${c.id}" ${state.txFilterCard===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
-      </select>
+      </select>`:''}
       <input class="input" type="number" step="0.01" placeholder="Valor mín." style="width:110px;" value="${state.txFilterMin||''}" onchange="state.txFilterMin=this.value; renderPage();">
       <input class="input" type="number" step="0.01" placeholder="Valor máx." style="width:110px;" value="${state.txFilterMax||''}" onchange="state.txFilterMax=this.value; renderPage();">
       ${(state.txFilterMin||state.txFilterMax)?`<button class="btn btn-sm btn-ghost" onclick="state.txFilterMin=''; state.txFilterMax=''; renderPage();">✕ limpar valores</button>`:''}
@@ -1083,30 +1082,35 @@ function pageTransacoes(){
     ${list.length>0? `<div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
       <label class="checkline" style="margin-right:4px;"><input type="checkbox" ${list.length>0 && list.every(t=>state.selectedTx&&state.selectedTx.has(t.id))?'checked':''} onchange="toggleSelectAllVisible(${JSON.stringify(list.map(t=>t.id)).replace(/"/g,"'")})"> Selecionar todas</label>
       <button class="btn btn-sm btn-outline" onclick="bulkMarkPaid()">✓ Marcar estas ${list.length} como pagas</button>
-      <button class="btn btn-sm btn-outline" onclick="bulkSetInvoiceMonth()">📅 Definir mês de fatura destas ${list.length}</button>
+      ${opts.showCardFilter?`<button class="btn btn-sm btn-outline" onclick="bulkSetInvoiceMonth()">📅 Definir mês de fatura destas ${list.length}</button>`:''}
       <button class="btn btn-sm btn-danger-ghost" onclick="bulkDelete()">🗑 Excluir estas ${list.length}</button>
       ${state.selectedTx && state.selectedTx.size>0 ? `
       <span style="width:1px; height:20px; background:var(--border); margin:0 4px;"></span>
       <span style="font-size:12.5px; color:var(--text-muted); font-weight:600;">${state.selectedTx.size} selecionada(s):</span>
       <button class="btn btn-sm btn-primary" onclick="bulkChangeCategory()">🏷️ Alterar categoria</button>
-      <button class="btn btn-sm btn-outline" onclick="bulkChangeCard()">💳 Mudar cartão</button>
+      ${opts.showCardFilter?`<button class="btn btn-sm btn-outline" onclick="bulkChangeCard()">💳 Mudar cartão</button>`:''}
       ` : ''}
     </div>` : ''}
     <div class="card card-pad">
-      ${list.length===0? emptyState('🧾','Nenhuma transação encontrada','Ajuste os filtros ou lance uma nova transação.') : list.map(t=>txRow(t,true)).join('')}
+      ${list.length===0? emptyState('🧾','Nenhuma transação encontrada','Ajuste os filtros.') : list.map(t=>txRow(t,true)).join('')}
     </div>
   `;
 }
+function pageTransacoes(){
+  state.txScope = 'nao-cartao';
+  const list = getFilteredTxList('nao-cartao');
+  return `
+    <div class="page-head">
+      <div><h1>Transações</h1><p>${list.length} registro(s) · pix, dinheiro e transferência</p></div>
+      <div class="head-actions">
+        <button class="btn btn-primary" onclick="openTxModal(null)">+ Nova</button>
+      </div>
+    </div>
+    ${renderTxFiltersAndList('nao-cartao', {showCardFilter:false})}
+  `;
+}
 function currentTxFilterIds(){
-  let list = [...DB.tx];
-  if(state.txFilterType!=='todos') list = list.filter(t=>t.type===state.txFilterType);
-  if(state.txFilterStatus!=='todos') list = list.filter(t=>t.status===state.txFilterStatus);
-  if(state.txFilterCard!=='todos') list = list.filter(t=>t.cardId===state.txFilterCard);
-  if(state.search.trim()){
-    const q = state.search.toLowerCase();
-    list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
-  }
-  return list.map(t=>t.id);
+  return getFilteredTxList(state.txScope||'all').map(t=>t.id);
 }
 function bulkChangeCategory(){
   const ids = Array.from(state.selectedTx||[]);
@@ -1203,6 +1207,7 @@ function applyBulkInvoiceMonth(ids){
 /* ============================ CARTÕES ============================ */
 const CARD_COLORS = [{k:'orange',c:'cc-orange'},{k:'navy',c:'cc-navy'},{k:'violet',c:'cc-violet'},{k:'green',c:'cc-green'}];
 function pageCartoes(){
+  if(state.cartoesView==='extrato') return pageCartaoExtrato();
   const mk = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0');
   const byCardOverview = {};
   DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod==='cartao' && t.cardId && (t.invoiceMonth||t.date.slice(0,7))===mk)
@@ -1225,7 +1230,7 @@ function pageCartoes(){
   return `
     <div class="page-head">
       <div><h1>Cartões de Crédito</h1><p>${DB.cards.length} cartão(ões) cadastrado(s) · fatura de ${monthLabel(state.month)}</p></div>
-      <div class="head-actions">${monthNav()}<button class="btn btn-primary" onclick="openCardModal(null)">+ Novo cartão</button></div>
+      <div class="head-actions">${monthNav()}<button class="btn btn-outline" onclick="state.txFilterCard='todos'; state.cartoesView='extrato'; renderPage();">📋 Ver extrato</button><button class="btn btn-primary" onclick="openCardModal(null)">+ Novo cartão</button></div>
     </div>
     ${DB.cards.length>1 ? `
     <div class="card card-pad" style="margin-bottom:16px;">
@@ -1303,7 +1308,22 @@ function pageCartoes(){
     </div>`}
   `;
 }
-function openCardDetail(id){ state.txFilterCard=id; state.page='transacoes'; render(); }
+function openCardDetail(id){ state.txFilterCard=id; state.cartoesView='extrato'; state.page='cartoes'; render(); }
+function pageCartaoExtrato(){
+  state.txScope = 'cartao';
+  const list = getFilteredTxList('cartao');
+  return `
+    <div class="page-head">
+      <div><h1>Extrato dos Cartões</h1><p>${list.length} registro(s)</p></div>
+      <div class="head-actions">
+        <button class="btn btn-outline" onclick="state.cartoesView='grid'; renderPage();">← Voltar para Cartões</button>
+        <button class="btn btn-outline" onclick="openImportModal()">📄 Importar fatura (PDF)</button>
+        <button class="btn btn-primary" onclick="openTxModal(null,'despesa')">+ Nova</button>
+      </div>
+    </div>
+    ${renderTxFiltersAndList('cartao', {showCardFilter:true})}
+  `;
+}
 
 /* ============================ CATEGORIAS ============================ */
 /* ============================ RECORRENTES (lançamentos pré-cadastrados) ============================ */
