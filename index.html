@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-cartoes-detalhes-movidos';
+const APP_VERSION = '2026.07.10-sync-incremental';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -430,6 +430,8 @@ async function loadAll(){
       DB[key] = (data||[]).map(fromDbRow[key]);
       supa = true;
       if(DB[key].length>0) allEmpty = false;
+      if(!_persistSnapshot[key]) _persistSnapshot[key] = new Map();
+      DB[key].map(toDbRow[key]).forEach(r=>_persistSnapshot[key].set(String(r.id), JSON.stringify(r)));
     }catch(e){
       console.error('Falha ao carregar '+key+' do Supabase:', e);
       window._lastSupaError = (e && e.message) || String(e);
@@ -466,18 +468,31 @@ async function loadAll(){
   }
 }
 
+const _persistSnapshot = {}; // key -> Map(id -> JSON string) do que já foi confirmado salvo no Supabase
+
 async function persist(key){
   const table = TABLE_MAP[key];
   const rows = DB[key].map(toDbRow[key]);
+  if(!_persistSnapshot[key]) _persistSnapshot[key] = new Map();
+  const snap = _persistSnapshot[key];
+
   if(supa){
     try{
-      if(rows.length>0){
-        await sbRequest('POST', table, {query:'?on_conflict=id', body:rows, prefer:'resolution=merge-duplicates,return=minimal'});
-        const ids = rows.map(r=>String(r.id).replace(/[(),"]/g,'')).join(',');
-        await sbRequest('DELETE', table, {query:`?id=not.in.(${ids})`});
-      } else {
-        await sbRequest('DELETE', table, {query:'?id=neq.__never_matches__'});
+      // so envia linhas novas ou que mudaram desde o ultimo salvamento (evita reenviar a tabela inteira toda vez)
+      const changed = rows.filter(r=>{ const s=JSON.stringify(r); return snap.get(r.id)!==s; });
+      if(changed.length>0){
+        await sbRequest('POST', table, {query:'?on_conflict=id', body:changed, prefer:'resolution=merge-duplicates,return=minimal'});
       }
+      // deleta so os ids que sumiram do array local (lista tipicamente pequena, mesmo com a tabela grande)
+      const currentIds = new Set(rows.map(r=>String(r.id)));
+      const deletedIds = Array.from(snap.keys()).filter(id=>!currentIds.has(id));
+      if(deletedIds.length>0){
+        const idsStr = deletedIds.map(id=>id.replace(/[(),"]/g,'')).join(',');
+        await sbRequest('DELETE', table, {query:`?id=in.(${idsStr})`});
+      }
+      // atualiza o retrato local
+      snap.clear();
+      rows.forEach(r=>snap.set(String(r.id), JSON.stringify(r)));
       try{ localStorage.setItem('orcame:'+key, JSON.stringify(DB[key])); }catch(_){}
       return true;
     }catch(e){
