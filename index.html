@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-extrato-cartoes-separado';
+const APP_VERSION = '2026.07.10-vencimentos-evolucao-liquido-fix';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -812,7 +812,7 @@ function pagePainel(){
   const upcoming = [];
   DB.cards.forEach(c=>{
     const debt = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod==='cartao' && t.cardId===c.id && t.status==='pendente').reduce((s,t)=>s+t.amount,0);
-    if(c.dueDay){ upcoming.push({label:c.name, sub:'Cartão · vence dia '+c.dueDay, value:debt, kind:'card'}); }
+    if(c.dueDay && debt>0){ upcoming.push({label:c.name, sub:'Cartão · vence dia '+c.dueDay, value:debt, kind:'card'}); }
   });
   despesas.filter(t=>t.status==='pendente' && t.dueDate).forEach(t=>{
     upcoming.push({label:t.description, sub:(catById(t.category)?.name||'')+' · '+fmtDateFull(t.dueDate), value:t.amount, kind:'tx', due:t.dueDate});
@@ -825,7 +825,7 @@ function pagePainel(){
   const evo = [];
   for(let i=5;i>=0;i--){
     const d = new Date(m.getFullYear(), m.getMonth()-i, 1);
-    const r = DB.tx.filter(t=>t.type==='receita'&&inSelectedMonth(t,d)).reduce((s,t)=>s+t.amount,0);
+    const r = DB.tx.filter(t=>t.type==='receita'&&t.amount>0&&inSelectedMonth(t,d)).reduce((s,t)=>s+netReceita(t),0);
     const de = DB.tx.filter(t=>t.type==='despesa'&&inSelectedMonth(t,d)).reduce((s,t)=>s+t.amount,0);
     evo.push({label:MONTHS_SHORT[d.getMonth()]+' de '+String(d.getFullYear()).slice(2), r, de});
   }
@@ -1574,12 +1574,12 @@ function pageRelatorios(){
   despesasAno.forEach(t=>{ anoCatMap[t.category] = (anoCatMap[t.category]||0)+t.amount; });
   const anoCatRows = Object.entries(anoCatMap).map(([cid,val])=>({cid, val, c:catById(cid)})).sort((a,b)=>b.val-a.val);
   const totalDespesasAno = despesasAno.reduce((s,t)=>s+t.amount,0);
-  const totalReceitasAno = receitasAno.reduce((s,t)=>s+t.amount,0);
+  const totalReceitasAno = receitasAno.reduce((s,t)=>s+netReceita(t),0);
   const anoMonthly = [];
   for(let m=0;m<12;m++){
     const mk = anoAtual+'-'+String(m+1).padStart(2,'0');
     const de = despesasAno.filter(t=>txMonthKey(t)===mk).reduce((s,t)=>s+t.amount,0);
-    const re = receitasAno.filter(t=>txMonthKey(t)===mk).reduce((s,t)=>s+t.amount,0);
+    const re = receitasAno.filter(t=>txMonthKey(t)===mk).reduce((s,t)=>s+netReceita(t),0);
     anoMonthly.push({label:MONTHS_SHORT[m], de, r:re});
   }
   window._anoEvoData = anoMonthly;
