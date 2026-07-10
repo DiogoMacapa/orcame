@@ -296,7 +296,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-vencimentos-evolucao-liquido-fix';
+const APP_VERSION = '2026.07.10-heatmap-projecao';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -1633,6 +1633,38 @@ function pageRelatorios(){
     return {...t, remaining, endLabel: MONTHS_PT[end.getMonth()]+' de '+end.getFullYear()};
   }).sort((a,b)=>a.remaining-b.remaining);
 
+  // heatmap: gastos por dia da semana, ultimos 90 dias
+  const weekdayLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate()-90);
+  const weekdayTotals = [0,0,0,0,0,0,0]; const weekdayCounts = [0,0,0,0,0,0,0];
+  DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && t.date && parseISO(t.date)>=ninetyDaysAgo).forEach(t=>{
+    const wd = parseISO(t.date).getDay();
+    weekdayTotals[wd]+=t.amount; weekdayCounts[wd]++;
+  });
+  const weekdayMax = Math.max(...weekdayTotals, 1);
+
+  // projecao proximos 3 meses: media variavel dos ultimos 3 meses + parcelamentos ja conhecidos
+  const projMonths = [1,2,3].map(i=> new Date(state.month.getFullYear(), state.month.getMonth()+i, 1));
+  const histMonths = [1,2,3].map(i=> new Date(state.month.getFullYear(), state.month.getMonth()-i, 1));
+  let sumVariable = 0;
+  histMonths.forEach(hm=>{
+    const hmk = hm.getFullYear()+'-'+String(hm.getMonth()+1).padStart(2,'0');
+    const totalMes = DB.tx.filter(t=>t.type==='despesa'&&t.amount>0&&txMonthKey(t)===hmk).reduce((s,t)=>s+t.amount,0);
+    const parceladoMes = DB.tx.filter(t=>t.type==='despesa'&&t.amount>0&&t.installmentTotal&&txMonthKey(t)===hmk).reduce((s,t)=>s+t.amount,0);
+    sumVariable += (totalMes - parceladoMes);
+  });
+  const baseVariable = sumVariable/3;
+  const projData = projMonths.map(pm=>{
+    let comprometido = 0;
+    parcelasInfo.forEach(t=>{
+      const inicioResto = new Date(parseISO(t.date).getFullYear(), parseISO(t.date).getMonth()+1, 1);
+      const fim = new Date(parseISO(t.date).getFullYear(), parseISO(t.date).getMonth()+t.remaining, 1);
+      if(pm>=inicioResto && pm<=fim) comprometido += t.amount;
+    });
+    return {label:MONTHS_SHORT[pm.getMonth()]+'/'+String(pm.getFullYear()).slice(2), variavel:Math.max(0,baseVariable), comprometido, total: Math.max(0,baseVariable)+comprometido};
+  });
+  const projMax = Math.max(...projData.map(p=>p.total), baseVariable, 1);
+
   return `
     <div class="page-head">
       <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos e resumo anual</p></div>
@@ -1660,6 +1692,46 @@ function pageRelatorios(){
         ${anoCatRows.length===0? emptyState('📅','Nenhuma despesa neste ano',' ') :
           anoCatRows.map(r=>{ const pct=totalDespesasAno?(r.val/totalDespesasAno*100):0;
             return `<div class="legend-row"><span class="legend-name">${r.c?r.c.icon+' '+esc(r.c.name):'—'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(r.val)}</span></div>`; }).join('')}
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-bottom:16px;">
+      <div class="card card-pad">
+        <div class="section-title"><h3>Gastos por Dia da Semana</h3><span class="meta">últimos 90 dias</span></div>
+        <div style="display:flex; gap:6px; align-items:flex-end; height:130px; padding:0 4px;">
+          ${weekdayLabels.map((lbl,i)=>{
+            const val = weekdayTotals[i]; const intensity = val/weekdayMax;
+            const h = Math.max(6, intensity*100);
+            const bg = intensity===0 ? '#EEF0F2' : `rgba(14,169,114,${0.18+intensity*0.75})`;
+            return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end;">
+              <div class="oc-hoverable" data-tip-label="${lbl}-feira" data-tip-pct="${weekdayCounts[i]} despesa(s)" data-tip-value="${esc(fmtBRL(val))}" style="width:100%; height:${h}px; border-radius:7px; background:${bg}; transition:height .2s;"></div>
+              <div style="font-size:10.5px; color:var(--text-faint); font-weight:600;">${lbl}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="font-size:11px; color:var(--text-faint); text-align:center; margin-top:10px;">quanto mais escuro, mais você gasta nesse dia da semana</div>
+      </div>
+      <div class="card card-pad">
+        <div class="section-title"><h3>Projeção — Próximos 3 Meses</h3><span class="meta">estimativa</span></div>
+        <div style="height:150px; display:flex; align-items:flex-end; gap:16px; padding:0 8px 0 40px; position:relative;">
+          ${[0,0.25,0.5,0.75,1].map(f=>`<div style="position:absolute; left:0; right:0; bottom:${f*110}px; border-top:1px dashed var(--surface-2); font-size:9px; color:var(--text-faint); padding-left:0;"><span style="position:absolute; left:-38px; top:-6px;">${fmtBRL(projMax*f).replace('R$ ','')}</span></div>`).join('')}
+          ${projData.map(p=>{
+            const hVar = (p.variavel/projMax*110); const hComp = (p.comprometido/projMax*110);
+            return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; z-index:1;">
+              <div class="oc-hoverable" data-tip-label="${p.label} (projeção)" data-tip-pct="variável ${esc(fmtBRL(p.variavel))} + parcelas ${esc(fmtBRL(p.comprometido))}" data-tip-value="${esc(fmtBRL(p.total))}" style="width:34px; display:flex; flex-direction:column-reverse; border:1.5px dashed var(--text-faint); border-radius:6px; overflow:hidden;">
+                <div style="height:${hVar}px; background:repeating-linear-gradient(135deg, var(--primary-tint), var(--primary-tint) 4px, #fff 4px, #fff 8px);"></div>
+                <div style="height:${hComp}px; background:repeating-linear-gradient(135deg, var(--info-tint), var(--info-tint) 4px, #fff 4px, #fff 8px);"></div>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-faint); font-weight:600;">${p.label}</div>
+              <div style="font-family:var(--mono); font-size:10.5px; font-weight:700;">${fmtBRL(p.total)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="display:flex; gap:14px; justify-content:center; margin-top:14px; font-size:10.5px; color:var(--text-muted);">
+          <span><span style="display:inline-block;width:9px;height:9px;background:var(--primary-tint);border-radius:2px;margin-right:5px;"></span>variável (média)</span>
+          <span><span style="display:inline-block;width:9px;height:9px;background:var(--info-tint);border-radius:2px;margin-right:5px;"></span>parcelas já sabidas</span>
+        </div>
+        <div style="font-size:10.5px; color:var(--text-faint); text-align:center; margin-top:6px;">baseado na média dos últimos 3 meses + parcelamentos em andamento — não considera gastos novos ainda não lançados</div>
       </div>
     </div>
 
