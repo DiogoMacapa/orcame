@@ -339,7 +339,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-mobile-nav-responsivo';
+const APP_VERSION = '2026.07.10-ultimas-transacoes-ordem-correta';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -442,6 +442,7 @@ const fromDbRow = {
     installmentTotal:r.installment_total==null?'':r.installment_total,
     invoiceMonth:r.invoice_month||'', recurring:!!r.recurring, dueDate:r.due_date||'', notes:r.notes||'',
     taxPercent:r.tax_percent==null?'':r.tax_percent, repasseAmount:r.repasse_amount==null?'':r.repasse_amount,
+    createdAt: r.created_at || '',
   }),
   cards: r => ({
     id:r.id, name:r.name, bank:r.bank||'', lastDigits:r.last_digits||'',
@@ -871,7 +872,8 @@ function pagePainel(){
   });
   upcoming.sort((a,b)=>(a.due&&b.due)?parseISO(a.due)-parseISO(b.due):0);
 
-  const recent = [...DB.tx].sort((a,b)=>parseISO(b.date)-parseISO(a.date)).slice(0,6);
+  const tsOf = t => t.createdAt ? new Date(t.createdAt).getTime() : parseISO(t.date).getTime();
+  const recent = [...DB.tx].sort((a,b)=>tsOf(b)-tsOf(a)).slice(0,6);
 
   // evolução últimos 6 meses
   const evo = [];
@@ -2065,7 +2067,7 @@ function quickLogTemplate(id){
       date: new Date().toISOString().slice(0,10), status: 'pendente', paymentMethod: tpl.paymentMethod||'pix',
       cardId: tpl.paymentMethod==='cartao' ? tpl.cardId : '', installmentCurrent:'', installmentTotal:'',
       invoiceMonth: tpl.paymentMethod==='cartao' ? (state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0')) : '',
-      recurring: !!tpl.recurring, dueDate:'', notes:'',
+      recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     };
     if(tpl.type==='receita'){ obj.taxPercent=0; obj.repasseAmount=0; }
     DB.tx.push(obj);
@@ -2124,7 +2126,7 @@ function confirmAtendimento(id){
     id: uid(), type:'receita', description: tpl.title+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_atDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
-    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
+    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
   };
   DB.tx.push(obj);
@@ -2174,7 +2176,7 @@ function confirmMultiplo(id){
     id: uid(), type:'receita', description: tpl.title+' ('+r.parts.join(', ')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_mDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
-    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'',
+    installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
   };
   DB.tx.push(obj);
@@ -2218,7 +2220,7 @@ function saveTx(keepOpen){
     installmentCurrent: pm==='cartao' ? (parseInt(document.getElementById('f_installCur').value)||'') : '',
     installmentTotal: pm==='cartao' ? (parseInt(document.getElementById('f_installTot').value)||'') : '',
     invoiceMonth: pm==='cartao' ? (document.getElementById('f_invoiceMonth').value || '') : '',
-    recurring: document.getElementById('f_recurring').checked,
+    recurring: document.getElementById('f_recurring').checked, createdAt: t.createdAt || new Date().toISOString(),
     dueDate: document.getElementById('f_due').value || '',
     notes: document.getElementById('f_notes').value,
   };
@@ -2694,12 +2696,14 @@ function confirmImport(){
   const included = state.importRows.filter(r=>r.include && r.description && r.amount);
   if(included.length===0){ toast('Selecione ao menos uma transação para importar','danger'); return; }
   if(!state.importCardId){ toast('Selecione o cartão de destino','danger'); return; }
-  included.forEach(r=>{
+  const baseTs = Date.now();
+  included.forEach((r,i)=>{
     DB.tx.push({
       id:uid(), type:'despesa', description:r.description, category:r.category||'c-outros-d',
       amount:parseFloat(r.amount), date:r.date, status:state.importStatus||'pendente', paymentMethod:'cartao', cardId:state.importCardId,
       invoiceMonth: state.importInvoiceMonth,
       installmentCurrent:r.installmentCurrent||'', installmentTotal:r.installmentTotal||'', recurring:false, dueDate:'', notes:'Importado de fatura',
+      createdAt: new Date(baseTs+i).toISOString(),
     });
   });
   persist('tx').then(()=>{ closeModal(); toast(included.length+' transações importadas'); state.page='transacoes'; render(); });
