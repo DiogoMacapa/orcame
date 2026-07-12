@@ -339,7 +339,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-ultimas-transacoes-ordem-correta';
+const APP_VERSION = '2026.07.10-ultimas-transacoes-atividade';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -407,6 +407,7 @@ const toDbRow = {
     invoice_month:t.invoiceMonth||null, recurring:!!t.recurring, due_date:validSqlDate(t.dueDate), notes:t.notes||null,
     tax_percent:(t.taxPercent===''||t.taxPercent==null)?null:Number(t.taxPercent),
     repasse_amount:(t.repasseAmount===''||t.repasseAmount==null)?null:Number(t.repasseAmount),
+    paid_at: t.paidAt || null,
   }),
   cards: c => ({
     id:c.id, name:c.name, bank:c.bank||null, last_digits:c.lastDigits||null,
@@ -442,7 +443,7 @@ const fromDbRow = {
     installmentTotal:r.installment_total==null?'':r.installment_total,
     invoiceMonth:r.invoice_month||'', recurring:!!r.recurring, dueDate:r.due_date||'', notes:r.notes||'',
     taxPercent:r.tax_percent==null?'':r.tax_percent, repasseAmount:r.repasse_amount==null?'':r.repasse_amount,
-    createdAt: r.created_at || '',
+    createdAt: r.created_at || '', paidAt: r.paid_at || '',
   }),
   cards: r => ({
     id:r.id, name:r.name, bank:r.bank||'', lastDigits:r.last_digits||'',
@@ -872,7 +873,12 @@ function pagePainel(){
   });
   upcoming.sort((a,b)=>(a.due&&b.due)?parseISO(a.due)-parseISO(b.due):0);
 
-  const tsOf = t => t.createdAt ? new Date(t.createdAt).getTime() : parseISO(t.date).getTime();
+  const tsOf = t => {
+    const created = t.createdAt ? new Date(t.createdAt).getTime() : 0;
+    const paid = t.paidAt ? new Date(t.paidAt).getTime() : 0;
+    const best = Math.max(created, paid);
+    return best>0 ? best : parseISO(t.date).getTime();
+  };
   const recent = [...DB.tx].sort((a,b)=>tsOf(b)-tsOf(a)).slice(0,6);
 
   // evolução últimos 6 meses
@@ -1075,6 +1081,7 @@ function quickMarkPaid(id){
   const t = DB.tx.find(x=>x.id===id);
   if(!t) return;
   t.status = 'pago';
+  t.paidAt = new Date().toISOString();
   persist('tx').then(()=>{ toast((t.type==='receita'?'Recebido':'Pago')+': '+t.description); renderPage(); });
 }
 function toggleTxSelect(id){
@@ -1231,7 +1238,8 @@ function bulkDelete(){
 function bulkMarkPaid(){
   const ids = currentTxFilterIds();
   confirmAction(`Marcar ${ids.length} transação(ões) filtrada(s) como pagas/recebidas?`, ()=>{
-    DB.tx.forEach(t=>{ if(ids.includes(t.id)) t.status='pago'; });
+    const now = new Date().toISOString();
+    DB.tx.forEach(t=>{ if(ids.includes(t.id)){ t.status='pago'; t.paidAt=now; } });
     persist('tx').then(()=>{ toast('Status atualizado em massa'); renderPage(); });
   });
 }
@@ -2221,6 +2229,7 @@ function saveTx(keepOpen){
     installmentTotal: pm==='cartao' ? (parseInt(document.getElementById('f_installTot').value)||'') : '',
     invoiceMonth: pm==='cartao' ? (document.getElementById('f_invoiceMonth').value || '') : '',
     recurring: document.getElementById('f_recurring').checked, createdAt: t.createdAt || new Date().toISOString(),
+    paidAt: (document.getElementById('f_status').value==='pago') ? (t.status==='pago' ? (t.paidAt||new Date().toISOString()) : new Date().toISOString()) : '',
     dueDate: document.getElementById('f_due').value || '',
     notes: document.getElementById('f_notes').value,
   };
