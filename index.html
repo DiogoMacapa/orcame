@@ -257,11 +257,54 @@ a{color:inherit;}
 .stat-mini div b{display:block; font-family:var(--mono); font-size:15px;}
 .stat-mini div span{font-size:11px; color:var(--text-faint);}
 
+.mobile-topbar{display:none;}
+.mobile-overlay{display:none;}
+
 @media(max-width:880px){
-  .sidebar{display:none;}
-  .content{padding:18px 14px;}
-  .grid.g4{grid-template-columns:1fr 1fr;}
+  .app{position:relative;}
+  .sidebar{
+    position:fixed; top:0; left:0; height:100vh; z-index:300;
+    transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 0 rgba(0,0,0,0);
+  }
+  .sidebar.open{ transform:translateX(0); box-shadow:0 0 40px rgba(0,0,0,.25); }
+  .mobile-overlay{
+    display:none; position:fixed; inset:0; background:rgba(15,18,24,.45); z-index:290;
+  }
+  .mobile-overlay.open{ display:block; }
+  .mobile-topbar{
+    display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface);
+    border-bottom:1px solid var(--border); position:sticky; top:0; z-index:60;
+  }
+  .mobile-topbar .hamburger{
+    width:38px; height:38px; border-radius:10px; border:1px solid var(--border); background:var(--surface);
+    display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
+  }
+  .topbar{ flex-wrap:wrap; gap:8px; padding:10px 14px; }
+  .topbar .searchbox{ order:1; max-width:none; width:100%; }
+  .topbar > div[style*="flex:1"]{ display:none; }
+  .topbar > div[title="Atalhos de teclado"]{ display:none; }
+  .icon-btn{ order:2; }
+  .topbar .icon-btn{ display:none; }
+  .mobile-topbar{ display:flex !important; }
+  .content{padding:16px 12px 60px;}
+  .grid.g4{grid-template-columns:1fr 1fr; gap:10px;}
+  .grid.g3{grid-template-columns:1fr;}
   .grid.g2{grid-template-columns:1fr;}
+  .page-head{flex-direction:column; align-items:flex-start; gap:10px;}
+  .page-head h1{font-size:19px;}
+  .head-actions{width:100%; flex-wrap:wrap;}
+  .head-actions .month-switch{order:-1;}
+  .filters-bar{flex-direction:column; align-items:stretch;}
+  .filters-bar .select, .filters-bar .input, .filters-bar .search-inline{width:100%;}
+  .tx-row{flex-wrap:wrap;}
+  .tx-actions{opacity:1 !important; gap:6px;}
+  .tx-actions button{width:32px; height:32px; font-size:14px;}
+  .modal{max-width:calc(100vw - 24px); max-height:calc(100vh - 40px);}
+  .modal.wide{max-width:calc(100vw - 24px);}
+  .row2, .row3{grid-template-columns:1fr;}
+  table{display:block; overflow-x:auto; white-space:nowrap;}
+  .cat-grid{grid-template-columns:1fr 1fr;}
+  #ocTooltip{display:none !important;}
 }
 </style>
 </head>
@@ -296,7 +339,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-heatmap-projecao';
+const APP_VERSION = '2026.07.10-mobile-nav-responsivo';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -307,6 +350,7 @@ let state = {
   editing:null,
   importStep:0, importRows:[], importRawText:'', importCardId:null,
   selectedTx: new Set(),
+  mobileNavOpen: false,
 };
 
 /* ---- Supabase config (fetch direto na API REST, sem depender de CDN externo) ---- */
@@ -732,17 +776,24 @@ const NAV_ITEMS = [
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="sidebar">
+    <div class="mobile-overlay ${state.mobileNavOpen?'open':''}" onclick="toggleMobileNav(false)"></div>
+    <div class="sidebar ${state.mobileNavOpen?'open':''}">
       <div class="brand">
         <div class="brand-icon">💰</div>
         <div class="brand-text"><b>orça•me</b><span>Controle financeiro pessoal</span></div>
       </div>
       <div class="nav">
-        ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}')"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
+        ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}'); toggleMobileNav(false);"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
       </div>
       <div class="sidebar-foot"><div class="hint">${supa && !usingFallbackStorage ? '🟢 Conectado ao Supabase' : '🟡 Salvando localmente neste navegador'}</div>${(usingFallbackStorage && window._lastSupaError) ? `<div class="hint" style="margin-top:6px; color:var(--danger); word-break:break-word;">Erro: ${esc(window._lastSupaError)}</div>` : ''}<button class="btn btn-sm btn-outline" style="width:100%; margin-top:8px; justify-content:center;" onclick="exportBackup()">⬇️ Baixar backup</button><div class="hint" style="margin-top:6px; font-family:var(--mono); color:var(--text-faint);">build ${APP_VERSION}</div></div>
     </div>
     <div class="main">
+      <div class="mobile-topbar">
+        <button class="hamburger" onclick="toggleMobileNav(true)">☰</button>
+        <b style="font-size:15px;">orça•me</b>
+        <div style="flex:1"></div>
+        <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
+      </div>
       <div class="topbar">
         <div class="searchbox">🔎<input id="globalSearch" placeholder="Buscar transações, cartões..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
         <div style="flex:1"></div>
@@ -760,6 +811,7 @@ function render(){
 }
 
 function nav(page){ state.page=page; state.editing=null; if(page==='cartoes') state.cartoesView='grid'; render(); }
+function toggleMobileNav(open){ state.mobileNavOpen = open; render(); }
 function onSearch(v){ state.search=v; if(state.page!=='painel'){ renderPage(); } }
 
 function renderPage(){
