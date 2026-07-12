@@ -25,7 +25,9 @@
   --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
-body{font-family:var(--sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.45;}
+body{font-family:var(--sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.45; overflow-x:hidden;}
+*{max-width:100%;}
+.app, .main, .content{min-width:0;}
 ::-webkit-scrollbar{width:8px; height:8px;}
 ::-webkit-scrollbar-thumb{background:#D7DAE0; border-radius:8px;}
 button{font-family:inherit; cursor:pointer;}
@@ -122,7 +124,7 @@ a{color:inherit;}
 .legend-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--surface-2);}
 .legend-row:last-child{border-bottom:none;}
 .legend-dot{width:9px; height:9px; border-radius:3px; flex-shrink:0;}
-.legend-name{flex:1; font-weight:500; font-size:13px;}
+.legend-name{flex:1; font-weight:500; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .legend-pct{font-family:var(--mono); font-size:12px; color:var(--text-faint); width:42px; text-align:right;}
 .legend-val{font-family:var(--mono); font-size:13px; font-weight:600; width:92px; text-align:right;}
 
@@ -339,7 +341,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-ultimas-transacoes-atividade';
+const APP_VERSION = '2026.07.10-fix-overflow-horizontal';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
