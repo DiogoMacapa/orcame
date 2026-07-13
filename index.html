@@ -341,7 +341,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-avulso-foco-valor-variavel';
+const APP_VERSION = '2026.07.10-ir-repasse-editaveis';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -2097,18 +2097,28 @@ function openAtendimentoModal(id){
   const tpl = DB.templates.find(x=>x.id===id);
   if(!tpl) return;
   const rateIsVariable = (tpl.sessionRate==='' || tpl.sessionRate==null);
+  const repasseIsPercent = (tpl.repassePercent!=='' && tpl.repassePercent!=null);
   openModal(`
-    <div class="modal" style="max-width:400px;">
+    <div class="modal" style="max-width:420px;">
       <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Nome (paciente / descrição)</label><input class="input full" id="f_atName" value="${esc(tpl.title)}" placeholder="Digite o nome, se for avulso"></div>
-        ${rateIsVariable ? `
-        <div class="field"><label>Valor por atendimento (R$)</label><input class="input full" id="f_atRate" type="number" step="0.01" value="" placeholder="Ex: 300,00" oninput="updateAtendimentoPreview('${id}')"></div>
-        ` : `<input type="hidden" id="f_atRate" value="${tpl.sessionRate}">`}
-        <div class="field"><label>Quantidade de atendimentos</label><input class="input full" id="f_atQtd" type="number" min="1" value="1" oninput="updateAtendimentoPreview('${id}')"></div>
-        ${(tpl.repassePercent==='' || tpl.repassePercent==null) ? `
-        <div class="field"><label>Valor do repasse (R$)</label><input class="input full" id="f_atRepasse" type="number" step="0.01" value="0" oninput="updateAtendimentoPreview('${id}')"></div>
-        ` : `<input type="hidden" id="f_atRepasse" value="">`}
+        <div class="row2">
+          ${rateIsVariable ? `
+          <div class="field"><label>Valor por atendimento (R$)</label><input class="input full" id="f_atRate" type="number" step="0.01" value="" placeholder="Ex: 300,00" oninput="updateAtendimentoPreview('${id}')"></div>
+          ` : `<div class="field"><label>Valor por atendimento (R$)</label><input class="input full" id="f_atRate" type="number" step="0.01" value="${tpl.sessionRate}" oninput="updateAtendimentoPreview('${id}')"></div>`}
+          <div class="field"><label>Quantidade</label><input class="input full" id="f_atQtd" type="number" min="1" value="1" oninput="updateAtendimentoPreview('${id}')"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>IR (%)</label><input class="input full" id="f_atIr" type="number" step="0.01" value="${tpl.irPercent||0}" oninput="updateAtendimentoPreview('${id}')"></div>
+          ${repasseIsPercent ? `
+          <div class="field"><label>Repasse (%) do pós-IR</label><input class="input full" id="f_atRepassePct" type="number" step="0.01" value="${tpl.repassePercent}" oninput="updateAtendimentoPreview('${id}')"></div>
+          <input type="hidden" id="f_atRepasse" value="">
+          ` : `
+          <div class="field"><label>Repasse (R$)</label><input class="input full" id="f_atRepasse" type="number" step="0.01" value="0" oninput="updateAtendimentoPreview('${id}')"></div>
+          <input type="hidden" id="f_atRepassePct" value="">
+          `}
+        </div>
         <div class="field"><label>Data</label><input class="input full" id="f_atDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
         <div class="net-preview" id="atendimentoPreview"></div>
       </div>
@@ -2120,40 +2130,44 @@ function openAtendimentoModal(id){
   `);
   updateAtendimentoPreview(id);
 }
-function computeAtendimento(tpl, qtd, repasseManual, rateOverride){
-  const rate = (rateOverride!=null && rateOverride!=='') ? Number(rateOverride) : Number(tpl.sessionRate||0);
+function computeAtendimento(qtd, rate, irPct, repassePct, repasseFlat){
   const gross = qtd * rate;
-  const posIr = gross * (1 - (Number(tpl.irPercent)||0)/100);
+  const posIr = gross * (1 - (Number(irPct)||0)/100);
   let repasse;
-  if(tpl.repassePercent!=='' && tpl.repassePercent!=null){ repasse = posIr * (Number(tpl.repassePercent)/100); }
-  else { repasse = Number(repasseManual)||0; }
+  if(repassePct!=null && repassePct!==''){ repasse = posIr * (Number(repassePct)/100); }
+  else { repasse = Number(repasseFlat)||0; }
   const liquido = posIr - repasse;
-  return {gross, repasse, liquido, rate};
+  return {gross, posIr, repasse, liquido, rate};
+}
+function readAtendimentoForm(){
+  const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
+  const rate = parseFloat(document.getElementById('f_atRate').value)||0;
+  const irPct = document.getElementById('f_atIr').value;
+  const repassePctEl = document.getElementById('f_atRepassePct');
+  const repasseFlatEl = document.getElementById('f_atRepasse');
+  const repassePct = (repassePctEl && repassePctEl.value!=='') ? repassePctEl.value : null;
+  return computeAtendimento(qtd, rate, irPct, repassePct, repasseFlatEl?repasseFlatEl.value:0);
 }
 function updateAtendimentoPreview(id){
-  const tpl = DB.templates.find(x=>x.id===id);
-  const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
-  const repasseEl = document.getElementById('f_atRepasse');
-  const rateEl = document.getElementById('f_atRate');
-  const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0, rateEl?rateEl.value:null);
+  const r = readAtendimentoForm();
+  const irPct = document.getElementById('f_atIr').value||0;
   const el = document.getElementById('atendimentoPreview');
-  if(el) el.innerHTML = `${qtd} atendimento(s) × ${fmtBRL(r.rate)} = <b>${fmtBRL(r.gross)}</b><br>IR ${tpl.irPercent}% + repasse ${fmtBRL(r.repasse)} → líquido: <b>${fmtBRL(r.liquido)}</b>`;
+  if(el) el.innerHTML = `Valor bruto: <b>${fmtBRL(r.gross)}</b><br>− IR (${irPct}%): <b>${fmtBRL(r.gross-r.posIr)}</b><br>− Repasse: <b>${fmtBRL(r.repasse)}</b><br>Lucro líquido: <b style="color:var(--primary-dark);">${fmtBRL(r.liquido)}</b>`;
 }
 function confirmAtendimento(id){
   const tpl = DB.templates.find(x=>x.id===id);
   const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
+  const rate = parseFloat(document.getElementById('f_atRate').value)||0;
   if(qtd<=0){ toast('Informe uma quantidade válida','danger'); return; }
-  const rateEl = document.getElementById('f_atRate');
-  if(rateEl && rateEl.tagName==='INPUT' && rateEl.type==='number' && (!rateEl.value || parseFloat(rateEl.value)<=0)){ toast('Informe o valor do atendimento','danger'); return; }
+  if(rate<=0){ toast('Informe o valor do atendimento','danger'); return; }
   const nome = (document.getElementById('f_atName').value||tpl.title).trim();
-  const repasseEl = document.getElementById('f_atRepasse');
-  const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0, rateEl?rateEl.value:null);
+  const r = readAtendimentoForm();
   const obj = {
     id: uid(), type:'receita', description: nome+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_atDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
-    taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
+    taxPercent: Number(document.getElementById('f_atIr').value)||0, repasseAmount: r.repasse,
   };
   DB.tx.push(obj);
   persist('tx').then(()=>{ closeModal(); toast(nome+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
