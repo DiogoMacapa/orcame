@@ -341,7 +341,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-ir-repasse-editaveis';
+const APP_VERSION = '2026.07.10-auditoria-liquido-completa';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -613,13 +613,17 @@ function checkAutoBackup(){
   toast('Backup mensal automático baixado 📥');
 }
 function exportTransactionsCSV(){
-  const rows = [['Data','Tipo','Descrição','Categoria','Forma de Pagamento','Cartão','Parcela','Status','Valor','Observações']];
+  const rows = [['Data','Tipo','Descrição','Categoria','Forma de Pagamento','Cartão','Parcela','Status','Valor Bruto','IR %','Repasse','Valor Líquido','Observações']];
   DB.tx.forEach(t=>{
     const c = catById(t.category); const card = t.cardId?cardById(t.cardId):null;
+    const liquido = t.type==='receita' ? netReceita(t) : t.amount;
     rows.push([
       fmtDateFull(t.date), t.type==='receita'?'Receita':'Despesa', t.description, c?c.name:'',
       t.paymentMethod||'', card?card.name:'', t.installmentTotal?`${t.installmentCurrent}/${t.installmentTotal}`:'',
-      t.status||'', String(t.amount).replace('.',','), t.notes||''
+      t.status||'', String(t.amount).replace('.',','),
+      t.type==='receita'?String(t.taxPercent||0).replace('.',','):'',
+      t.type==='receita'?String(t.repasseAmount||0).replace('.',','):'',
+      String(liquido).replace('.',','), t.notes||''
     ]);
   });
   const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\r\n');
@@ -674,8 +678,8 @@ function exportPainelReport(){
     </tbody></table>
     <h2>Transações do Mês (${txMes.length})</h2>
     <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="right">Valor</th></tr></thead><tbody>
-      ${txMes.sort((a,b)=>parseISO(b.date)-parseISO(a.date)).map(t=>{ const c=catById(t.category);
-        return `<tr><td>${fmtDateShort(t.date)}</td><td>${esc(t.description)}</td><td>${c?esc(c.name):''}</td><td class="right">${t.type==='receita'?'+':''}${fmtBRL(t.amount)}</td></tr>`; }).join('')}
+      ${txMes.sort((a,b)=>parseISO(b.date)-parseISO(a.date)).map(t=>{ const c=catById(t.category); const val = t.type==='receita'?netReceita(t):t.amount;
+        return `<tr><td>${fmtDateShort(t.date)}</td><td>${esc(t.description)}</td><td>${c?esc(c.name):''}</td><td class="right">${t.type==='receita'?'+':''}${fmtBRL(val)}</td></tr>`; }).join('')}
     </tbody></table>
     </body></html>
   `);
@@ -1065,7 +1069,7 @@ function txRow(t, selectable){
   if(t.paymentMethod==='cartao' && card) parts.push(card.name);
   else if(t.paymentMethod) parts.push(t.paymentMethod.toUpperCase());
   parts.push(fmtDateShort(t.date));
-  const displayAmt = t.type==='receita' ? t.amount : -t.amount; // negativo = credito, sinal correto automaticamente
+  const displayAmt = t.type==='receita' ? netReceita(t) : -t.amount; // negativo = credito, sinal correto automaticamente
   const checked = state.selectedTx && state.selectedTx.has(t.id);
   return `<div class="tx-row">
     ${selectable?`<input type="checkbox" style="margin-right:4px; width:16px; height:16px; flex-shrink:0;" ${checked?'checked':''} onchange="toggleTxSelect('${t.id}')">`:''}
