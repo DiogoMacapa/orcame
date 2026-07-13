@@ -341,7 +341,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-fix-overflow-horizontal';
+const APP_VERSION = '2026.07.10-atendimento-avulso';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -2016,6 +2016,12 @@ function renderTxModal(){
           ${DB.templates.filter(x=>x.type===t.type).map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
         </select></div>
         ` : ''}
+        ${(!t.id && t.type==='receita' && DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).length>0) ? `
+        <div class="field"><label>Ou calcular como atendimento avulso (nome digitado na hora)</label><select class="select full" id="f_avulsoTpl" onchange="if(this.value) openAvulsoAtendimento(this.value);">
+          <option value="">— usar as regras de um modelo (ex: Foco) com outro nome —</option>
+          ${DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
+        </select></div>
+        ` : ''}
         <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..."></div>
         <div class="row2">
           <div class="field"><label>Categoria</label><select class="select full" id="f_cat">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
@@ -2094,6 +2100,7 @@ function openAtendimentoModal(id){
     <div class="modal" style="max-width:400px;">
       <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
+        <div class="field"><label>Nome (paciente / descrição)</label><input class="input full" id="f_atName" value="${esc(tpl.title)}" placeholder="Digite o nome, se for avulso"></div>
         <div class="field"><label>Quantidade de atendimentos</label><input class="input full" id="f_atQtd" type="number" min="1" value="1" oninput="updateAtendimentoPreview('${id}')"></div>
         ${(tpl.repassePercent==='' || tpl.repassePercent==null) ? `
         <div class="field"><label>Valor do repasse (R$)</label><input class="input full" id="f_atRepasse" type="number" step="0.01" value="0" oninput="updateAtendimentoPreview('${id}')"></div>
@@ -2130,17 +2137,18 @@ function confirmAtendimento(id){
   const tpl = DB.templates.find(x=>x.id===id);
   const qtd = parseInt(document.getElementById('f_atQtd').value)||0;
   if(qtd<=0){ toast('Informe uma quantidade válida','danger'); return; }
+  const nome = (document.getElementById('f_atName').value||tpl.title).trim();
   const repasseEl = document.getElementById('f_atRepasse');
   const r = computeAtendimento(tpl, qtd, repasseEl?repasseEl.value:0);
   const obj = {
-    id: uid(), type:'receita', description: tpl.title+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
+    id: uid(), type:'receita', description: nome+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_atDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
   };
   DB.tx.push(obj);
-  persist('tx').then(()=>{ closeModal(); toast(tpl.title+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
+  persist('tx').then(()=>{ closeModal(); toast(nome+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
 }
 function openMultiploModal(id){
   const tpl = DB.templates.find(x=>x.id===id);
@@ -2149,6 +2157,7 @@ function openMultiploModal(id){
     <div class="modal" style="max-width:420px;">
       <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
+        <div class="field"><label>Nome (paciente / descrição)</label><input class="input full" id="f_mName" value="${esc(tpl.title)}" placeholder="Digite o nome, se for avulso"></div>
         ${tpl.services.map((s,i)=>`<div class="field"><label>${esc(s.name)} (${fmtBRL(s.rate)} cada)</label><input class="input full" id="f_mqtd_${i}" type="number" min="0" value="0" oninput="updateMultiploPreview('${id}')"></div>`).join('')}
         <div class="field"><label>Data</label><input class="input full" id="f_mDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
         <div class="net-preview" id="multiploPreview"></div>
@@ -2182,15 +2191,23 @@ function confirmMultiplo(id){
   const tpl = DB.templates.find(x=>x.id===id);
   const r = computeMultiplo(tpl);
   if(r.gross<=0){ toast('Informe ao menos uma quantidade','danger'); return; }
+  const nome = (document.getElementById('f_mName').value||tpl.title).trim();
   const obj = {
-    id: uid(), type:'receita', description: tpl.title+' ('+r.parts.join(', ')+')', category: tpl.category,
+    id: uid(), type:'receita', description: nome+' ('+r.parts.join(', ')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_mDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     taxPercent: Number(tpl.irPercent)||0, repasseAmount: r.repasse,
   };
   DB.tx.push(obj);
-  persist('tx').then(()=>{ closeModal(); toast(tpl.title+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
+  persist('tx').then(()=>{ closeModal(); toast(nome+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
+}
+function openAvulsoAtendimento(id){
+  const tpl = DB.templates.find(x=>x.id===id);
+  if(!tpl) return;
+  closeModal();
+  if(tpl.billingMode==='multiplo') openMultiploModal(id);
+  else openAtendimentoModal(id);
 }
 function applyTemplate(id){
   if(!id) return;
