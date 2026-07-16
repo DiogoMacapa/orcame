@@ -341,7 +341,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.10-auditoria-liquido-completa';
+const APP_VERSION = '2026.07.10-pagar-rapido-soma-periodo';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -872,10 +872,10 @@ function pagePainel(){
   const upcoming = [];
   DB.cards.forEach(c=>{
     const debt = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod==='cartao' && t.cardId===c.id && t.status==='pendente').reduce((s,t)=>s+t.amount,0);
-    if(c.dueDay && debt>0){ upcoming.push({label:c.name, sub:'Cartão · vence dia '+c.dueDay, value:debt, kind:'card'}); }
+    if(c.dueDay && debt>0){ upcoming.push({label:c.name, sub:'Cartão · vence dia '+c.dueDay, value:debt, kind:'card', cardId:c.id}); }
   });
   despesas.filter(t=>t.status==='pendente' && t.dueDate).forEach(t=>{
-    upcoming.push({label:t.description, sub:(catById(t.category)?.name||'')+' · '+fmtDateFull(t.dueDate), value:t.amount, kind:'tx', due:t.dueDate});
+    upcoming.push({label:t.description, sub:(catById(t.category)?.name||'')+' · '+fmtDateFull(t.dueDate), value:t.amount, kind:'tx', due:t.dueDate, id:t.id});
   });
   upcoming.sort((a,b)=>(a.due&&b.due)?parseISO(a.due)-parseISO(b.due):0);
 
@@ -1048,7 +1048,7 @@ function pagePainel(){
       <div class="card card-pad">
         <div class="section-title"><h3>Próximos Vencimentos</h3></div>
         ${upcoming.length===0? emptyState('📅','Nenhum vencimento próximo','Cadastre cartões e despesas fixas para acompanhar aqui.') :
-          upcoming.slice(0,6).map(u=>`<div class="tx-row"><div class="tx-ic out">📅</div><div class="tx-main"><div class="tx-title">${esc(u.label)}</div><div class="tx-sub">${esc(u.sub)}</div></div><div class="tx-amt down">${fmtBRL(u.value)}</div></div>`).join('')}
+          upcoming.slice(0,6).map(u=>`<div class="tx-row"><div class="tx-ic out">📅</div><div class="tx-main"><div class="tx-title">${esc(u.label)}</div><div class="tx-sub">${esc(u.sub)}</div></div><div class="tx-amt down">${fmtBRL(u.value)}</div>${u.kind==='tx'?`<button onclick="quickMarkPaid('${u.id}')" title="Marcar como pago" style="width:28px; height:28px; border:none; background:var(--primary-tint); color:var(--primary-dark); border-radius:7px; font-size:13px; flex-shrink:0; margin-left:8px;">✓</button>`:`<button onclick="markCardInvoicePaid('${u.cardId}')" title="Marcar fatura como paga" style="width:28px; height:28px; border:none; background:var(--primary-tint); color:var(--primary-dark); border-radius:7px; font-size:13px; flex-shrink:0; margin-left:8px;">✓</button>`}</div>`).join('')}
       </div>
       <div class="card card-pad">
         <div class="section-title"><h3>Últimas Transações</h3><a onclick="nav('transacoes')" style="cursor:pointer">Ver todas</a></div>
@@ -1090,6 +1090,16 @@ function quickMarkPaid(id){
   t.paidAt = new Date().toISOString();
   persist('tx').then(()=>{ toast((t.type==='receita'?'Recebido':'Pago')+': '+t.description); renderPage(); });
 }
+function markCardInvoicePaid(cardId){
+  const card = cardById(cardId);
+  const pendentes = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod==='cartao' && t.cardId===cardId && t.status==='pendente');
+  if(pendentes.length===0) return;
+  confirmAction(`Marcar toda a fatura pendente do ${card?card.name:'cartão'} (${pendentes.length} lançamento(s)) como paga?`, ()=>{
+    const now = new Date().toISOString();
+    pendentes.forEach(t=>{ t.status='pago'; t.paidAt=now; });
+    persist('tx').then(()=>{ closeModal(); toast('Fatura marcada como paga'); renderPage(); });
+  });
+}
 function toggleTxSelect(id){
   if(!state.selectedTx) state.selectedTx = new Set();
   if(state.selectedTx.has(id)) state.selectedTx.delete(id); else state.selectedTx.add(id);
@@ -1123,7 +1133,14 @@ function getFilteredTxList(scope){
 function renderTxFiltersAndList(scope, opts){
   opts = opts || {};
   const list = getFilteredTxList(scope);
+  const sumReceitas = list.filter(t=>t.type==='receita').reduce((s,t)=>s+netReceita(t),0);
+  const sumDespesas = list.filter(t=>t.type==='despesa').reduce((s,t)=>s+t.amount,0);
   return `
+    ${list.length>0 ? `<div class="card card-pad" style="margin-bottom:14px; display:flex; gap:24px; flex-wrap:wrap;">
+      ${sumReceitas>0?`<div><div style="font-size:10.5px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Soma filtrada · Receitas</div><div style="font-family:var(--mono); font-size:17px; font-weight:700; color:var(--primary-dark);">${fmtBRL(sumReceitas)}</div></div>`:''}
+      ${sumDespesas!==0?`<div><div style="font-size:10.5px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Soma filtrada · Despesas</div><div style="font-family:var(--mono); font-size:17px; font-weight:700; color:var(--danger);">${fmtBRL(sumDespesas)}</div></div>`:''}
+      ${(sumReceitas>0 && sumDespesas!==0)?`<div><div style="font-size:10.5px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Saldo</div><div style="font-family:var(--mono); font-size:17px; font-weight:700;">${fmtBRL(sumReceitas-sumDespesas)}</div></div>`:''}
+    </div>` : ''}
     <div class="filters-bar">
       <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
       <select class="select" onchange="state.txFilterType=this.value; renderPage();">
@@ -1634,6 +1651,12 @@ function pageMetas(){
 
 
 /* ============================ RELATÓRIOS ============================ */
+function filterByPeriodo(list){
+  const periodo = state.relatorioPeriodo || 'tudo';
+  if(periodo==='mes'){ const mk = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0'); return list.filter(t=>txMonthKey(t)===mk); }
+  if(periodo==='ano'){ const ano = state.relatorioAno || new Date().getFullYear(); return list.filter(t=>txMonthKey(t).startsWith(String(ano))); }
+  return list;
+}
 function pageRelatorios(){
   const anoAtual = state.relatorioAno || new Date().getFullYear();
   const despesasAno = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && txMonthKey(t).startsWith(String(anoAtual)));
@@ -1670,7 +1693,7 @@ function pageRelatorios(){
   const cmpTotals = cmpMonths.map((cm,i)=> cmpRows.reduce((s,r)=>s+r.vals[i],0));
 
 
-  const despesas = DB.tx.filter(t=>t.type==='despesa');
+  const despesas = filterByPeriodo(DB.tx.filter(t=>t.type==='despesa'));
   const byEst = {};
   despesas.forEach(t=>{
     const key = (t.description||'—').trim();
@@ -1682,7 +1705,7 @@ function pageRelatorios(){
   estRows.sort((a,b)=>b.total-a.total);
   if(state.search.trim()){ const q=state.search.toLowerCase(); estRows = estRows.filter(r=>r.name.toLowerCase().includes(q)); }
 
-  const receitas = DB.tx.filter(t=>t.type==='receita');
+  const receitas = filterByPeriodo(DB.tx.filter(t=>t.type==='receita'));
   const byOrig = {};
   receitas.forEach(t=>{
     const key = (t.description||'—').trim();
@@ -1735,14 +1758,32 @@ function pageRelatorios(){
 
   return `
     <div class="page-head">
-      <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos e resumo anual</p></div>
-      <div class="head-actions"><div class="month-switch">
+      <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos, comparativos e resumo anual</p></div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <div class="tabs" style="margin-bottom:0;">
+        <button class="tab ${(state.relatorioPeriodo||'tudo')==='mes'?'active':''}" onclick="state.relatorioPeriodo='mes'; renderPage();">Por Mês</button>
+        <button class="tab ${(state.relatorioPeriodo||'tudo')==='ano'?'active':''}" onclick="state.relatorioPeriodo='ano'; renderPage();">Por Ano</button>
+        <button class="tab ${(state.relatorioPeriodo||'tudo')==='tudo'?'active':''}" onclick="state.relatorioPeriodo='tudo'; renderPage();">Todos os Períodos</button>
+      </div>
+      ${(state.relatorioPeriodo)==='mes' ? monthNav() : ''}
+      ${(state.relatorioPeriodo)==='ano' ? `<div class="month-switch">
         <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())-1; renderPage();">‹</button>
         <span class="lbl">${anoAtual}</span>
         <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())+1; renderPage();">›</button>
-      </div></div>
+      </div>` : ''}
+      <span style="font-size:11.5px; color:var(--text-faint);">controla os quadros de "Gastos por Estabelecimento" e "Receitas por Origem" abaixo</span>
     </div>
 
+    <div class="section-title" style="margin-top:4px;">
+      <h3 style="font-size:16px;">📅 Resumo Anual</h3>
+      <div class="month-switch">
+        <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())-1; renderPage();">‹</button>
+        <span class="lbl">${anoAtual}</span>
+        <button onclick="state.relatorioAno=(state.relatorioAno||new Date().getFullYear())+1; renderPage();">›</button>
+      </div>
+    </div>
     <div class="grid g4" style="margin-bottom:16px;">
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--primary-tint);color:var(--primary-dark)">↗</span>RECEITAS NO ANO</div><div class="stat-value up">${fmtBRL(totalReceitasAno)}</div></div>
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--danger-tint);color:var(--danger)">↘</span>DESPESAS NO ANO</div><div class="stat-value down">${fmtBRL(totalDespesasAno)}</div></div>
@@ -1828,7 +1869,7 @@ function pageRelatorios(){
     </div>
 
     <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="section-title"><h3>Gastos por Estabelecimento / Descrição</h3><span class="meta">peso sobre o total de despesas registradas</span></div>
+      <div class="section-title"><h3>Gastos por Estabelecimento / Descrição</h3><span class="meta">${(state.relatorioPeriodo)==='mes'?monthLabel(state.month):(state.relatorioPeriodo)==='ano'?'ano de '+anoAtual:'todos os períodos'}</span></div>
       ${estRows.length===0? emptyState('🏪','Nenhuma despesa registrada ainda','Lance despesas ou importe faturas para ver o ranking por estabelecimento.') : `
       <table style="width:100%; border-collapse:collapse;">
         <thead><tr style="text-align:left; font-size:11px; color:var(--text-faint); text-transform:uppercase;">
@@ -1851,7 +1892,7 @@ function pageRelatorios(){
     </div>
 
     <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="section-title"><h3>Receitas por Origem</h3><span class="meta">peso sobre o total de receitas registradas — todos os meses</span></div>
+      <div class="section-title"><h3>Receitas por Origem</h3><span class="meta">${(state.relatorioPeriodo)==='mes'?monthLabel(state.month):(state.relatorioPeriodo)==='ano'?'ano de '+anoAtual:'todos os períodos'}</span></div>
       ${origRows.length===0? emptyState('💰','Nenhuma receita registrada ainda','Lance receitas para ver de onde vem mais dinheiro — ex: qual paciente ou cliente rende mais.') : `
       <table style="width:100%; border-collapse:collapse;">
         <thead><tr style="text-align:left; font-size:11px; color:var(--text-faint); text-transform:uppercase;">
