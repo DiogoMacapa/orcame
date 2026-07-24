@@ -30,7 +30,7 @@
   --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
-body{font-family:var(--sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.45; overflow-x:hidden;}
+body{font-family:var(--sans); background:linear-gradient(180deg, #F5F7FB 0%, #F0F2F8 100%); background-attachment:fixed; color:var(--text); font-size:14px; line-height:1.45; overflow-x:hidden;}
 *{max-width:100%;}
 .app, .main, .content{min-width:0;}
 @keyframes fadeInUp{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
@@ -144,7 +144,8 @@ a{color:inherit;}
 .up{color:var(--primary-dark);} .down{color:var(--danger);}
 
 .section-title{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
-.section-title h3{font-size:14.5px; font-weight:700; display:flex; align-items:center; gap:8px;}
+.section-title h3{font-size:14.5px; font-weight:700; display:flex; align-items:center; gap:9px;}
+.section-title h3::before{content:''; display:inline-block; width:4px; height:15px; border-radius:3px; background:var(--primary-grad); flex-shrink:0;}
 .section-title .meta{font-size:12px; color:var(--text-faint);}
 .section-title a{font-size:12.5px; color:var(--primary); font-weight:600; text-decoration:none;}
 
@@ -198,24 +199,23 @@ a{color:inherit;}
 
 /* ---- Cards page: credit card visuals ---- */
 .ccard{
-  border-radius:18px; padding:20px 20px 16px; color:#fff; position:relative; overflow:hidden; min-height:118px;
-  display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 10px 28px rgba(19,23,34,.16);
+  border-radius:14px; padding:14px 18px; color:#fff; position:relative; overflow:hidden; min-height:64px;
+  display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:14px; box-shadow:0 8px 20px rgba(19,23,34,.16);
   transition:transform .25s var(--ease), box-shadow .25s var(--ease);
 }
-.ccard-wrap:hover .ccard{transform:translateY(-3px) scale(1.01); box-shadow:0 16px 36px rgba(19,23,34,.22);}
-.ccard::after{content:''; position:absolute; right:-30px; top:-30px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08);}
-.ccard::before{content:''; position:absolute; left:-20px; bottom:-40px; width:110px; height:110px; border-radius:50%; background:rgba(255,255,255,.05);}
-.ccard .bank{font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.05em;}
-.ccard .name{font-size:17px; font-weight:700; margin-top:2px;}
-.ccard .digits{font-family:var(--mono); font-size:13px; opacity:.85; letter-spacing:.08em;}
+.ccard-wrap:hover .ccard{transform:translateY(-2px); box-shadow:0 12px 26px rgba(19,23,34,.22);}
+.ccard::after{content:''; position:absolute; right:-30px; top:-30px; width:100px; height:100px; border-radius:50%; background:rgba(255,255,255,.08);}
+.ccard .bank{font-size:10px; opacity:.75; text-transform:uppercase; letter-spacing:.05em;}
+.ccard .name{font-size:15.5px; font-weight:700; margin-top:1px;}
+.ccard .digits{font-family:var(--mono); font-size:12px; opacity:.85; letter-spacing:.06em; flex-shrink:0;}
 .cc-orange{background:linear-gradient(135deg,var(--orange-a),var(--orange-b));}
 .cc-navy{background:linear-gradient(135deg,var(--navy-a),var(--navy-b));}
 .cc-violet{background:linear-gradient(135deg,var(--violet-a),var(--violet-b));}
 .cc-green{background:linear-gradient(135deg,#22C08A,#0A8F5C);}
-.ccard-foot{display:flex; justify-content:space-between; padding:14px 4px 4px; font-size:12px;}
-.ccard-foot div b{display:block; font-family:var(--mono); font-size:14px; font-weight:600; margin-top:2px;}
+.ccard-foot{display:flex; justify-content:space-between; padding:11px 4px 2px; font-size:11.5px;}
+.ccard-foot div b{display:block; font-family:var(--mono); font-size:13px; font-weight:600; margin-top:1px;}
 .ccard-wrap{cursor:pointer;}
-.card-actions-row{display:flex; justify-content:flex-end; gap:6px; padding:8px 2px 0;}
+.card-actions-row{display:flex; justify-content:flex-end; gap:6px; padding:6px 2px 0;}
 
 /* ---- Category grid ---- */
 .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
@@ -376,10 +376,18 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.11-visaogeral-compacta-verificada';
+const APP_VERSION = '2026.07.11-redesign-compacto-v2';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
+function _getInitialPage(){
+  try{
+    const saved = localStorage.getItem('orcame:lastPage');
+    const valid = ['painel','transacoes','cartoes','recorrentes','metas','categorias','relatorios'];
+    if(saved && valid.includes(saved)) return saved;
+  }catch(_){}
+  return 'painel';
+}
 let state = {
-  page:'painel',
+  page:_getInitialPage(),
   month: new Date(2026,6,1), // Julho 2026 context
   search:'',
   txFilterType:'todos', txFilterStatus:'todos', txFilterCard:'todos',
@@ -849,7 +857,7 @@ function render(){
   renderPage();
 }
 
-function nav(page){ state.page=page; state.editing=null; if(page==='cartoes') state.cartoesView='grid'; render(); }
+function nav(page){ state.page=page; state.editing=null; if(page==='cartoes') state.cartoesView='grid'; try{ localStorage.setItem('orcame:lastPage', page); }catch(_){} render(); }
 function toggleMobileNav(open){ state.mobileNavOpen = open; render(); }
 function onSearch(v){ state.search=v; if(state.page!=='painel'){ renderPage(); } }
 
@@ -1362,11 +1370,11 @@ function pageCartoes(){
           </div>
         </div>`}
       </div>` : ''}
-      <div class="card card-pad">
-        <div class="section-title"><h3>Despesas por Categoria nos Cartões</h3><span class="meta">${monthLabel(state.month)}</span></div>
+      <div class="card" style="padding:16px 20px;">
+        <div class="section-title" style="margin-bottom:14px;"><h3>Despesas por Categoria nos Cartões</h3><span class="meta">${monthLabel(state.month)}</span></div>
         ${catCartaoEntries.length===0? emptyState('🍕','Nenhuma despesa no cartão neste mês',' ') : `
-        <div style="display:flex; gap:12px; align-items:center;">
-          <div class="donut-wrap" id="chartCatCartao" style="width:100px;height:100px;flex-shrink:0;position:relative;"></div>
+        <div style="display:flex; gap:28px; align-items:flex-start;">
+          <div class="donut-wrap" id="chartCatCartao" style="width:110px;height:110px;flex-shrink:0;position:relative; margin-top:4px;"></div>
           <div style="flex:1; min-width:0;">
             ${catCartaoEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesasCartaoGross?(val/totalDespesasCartaoGross*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<div class="legend-row legend-row-tight"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
