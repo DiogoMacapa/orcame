@@ -376,7 +376,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.11-cartoes-compacto-parcelas-fix';
+const APP_VERSION = '2026.07.11-fix-dedup-parcelas-data';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -1749,10 +1749,11 @@ function pageRelatorios(){
   origRows.sort((a,b)=>b.total-a.total);
 
   const parcelasRaw = DB.tx.filter(t=>t.installmentTotal && t.installmentCurrent && t.installmentCurrent < t.installmentTotal);
-  // dedup: a mesma compra parcelada pode ter uma linha por fatura importada — mantem so a ocorrencia mais avancada (maior parcela atual)
+  // dedup: a mesma compra parcelada pode ter uma linha por fatura importada — mantem so a ocorrencia mais avancada (maior parcela atual).
+  // a data original da compra entra na chave pra nao confundir duas compras diferentes com mesma loja/valor/cartao.
   const parcelasDedupMap = {};
   parcelasRaw.forEach(t=>{
-    const key = normalizeMerchant(t.description)+'|'+t.installmentTotal+'|'+(t.cardId||'');
+    const key = normalizeMerchant(t.description)+'|'+t.installmentTotal+'|'+(t.cardId||'')+'|'+t.date;
     if(!parcelasDedupMap[key] || t.installmentCurrent > parcelasDedupMap[key].installmentCurrent) parcelasDedupMap[key] = t;
   });
   const parcelas = Object.values(parcelasDedupMap);
