@@ -9,23 +9,24 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{
-  --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC; --border:#E6E8EC;
-  --text:#171B21; --text-muted:#6B7280; --text-faint:#9CA3AF;
-  --primary:#0EA972; --primary-dark:#0B8B5D; --primary-tint:#E6F7EF;
-  --danger:#E4483A; --danger-tint:#FCEBEA;
-  --warning:#F0A833; --warning-tint:#FDF3E2;
-  --info:#3B7CE0; --info-tint:#EAF1FC;
+  --bg:#0B0F14; --surface:#12171F; --surface-2:#171D27; --border:#232A36;
+  --text:#EDF0F4; --text-muted:#8992A3; --text-faint:#5C6576;
+  --primary:#17C787; --primary-dark:#0EA972; --primary-tint:#0F2A22;
+  --danger:#F0554A; --danger-tint:#2E1618;
+  --warning:#F2B23D; --warning-tint:#2E2412;
+  --info:#4C93F5; --info-tint:#131F30;
   --orange-a:#F5A524; --orange-b:#F0721F;
-  --navy-a:#1F2937; --navy-b:#0B1220;
-  --violet-a:#7C6CF0; --violet-b:#4F3FCE;
+  --navy-a:#2B3444; --navy-b:#141922;
+  --violet-a:#8B7CF6; --violet-b:#6C5CE7;
   --radius-lg:16px; --radius:12px; --radius-sm:8px;
-  --shadow-sm:0 1px 2px rgba(20,24,31,.05);
-  --shadow-md:0 4px 16px rgba(20,24,31,.08);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
+  --shadow-md:0 8px 20px rgba(0,0,0,.35);
   --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
-body{font-family:var(--sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.45; overflow-x:hidden;}
+html{overflow-x:hidden;}
+body{font-family:var(--sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.45;}
 *{max-width:100%;}
 .app, .main, .content{min-width:0;}
 ::-webkit-scrollbar{width:8px; height:8px;}
@@ -37,31 +38,32 @@ a{color:inherit;}
 .app{display:flex; min-height:100vh;}
 
 /* ---- Sidebar ---- */
-.sidebar{
-  width:232px; background:var(--surface); border-right:1px solid var(--border);
-  display:flex; flex-direction:column; flex-shrink:0; position:sticky; top:0; height:100vh;
+.app{display:flex; flex-direction:column; min-height:100vh;}
+.topnav{
+  position:sticky; top:0; z-index:50; background:var(--surface); border-bottom:1px solid var(--border);
 }
-.brand{padding:22px 20px 18px; display:flex; align-items:center; gap:10px;}
-.brand-icon{width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); display:flex; align-items:center; justify-content:center; font-size:16px;}
-.brand-text b{font-size:15px; font-weight:800; letter-spacing:-.02em; display:block;}
-.brand-text span{font-size:11px; color:var(--text-muted);}
-.nav{flex:1; padding:6px 12px; display:flex; flex-direction:column; gap:2px;}
+.topnav-main{display:flex; align-items:center; gap:16px; padding:12px 24px;}
+.brand{display:flex; align-items:center; gap:10px; flex-shrink:0;}
+.brand-icon{width:36px; height:36px; border-radius:11px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); display:flex; align-items:center; justify-content:center; font-size:17px;}
+.brand-text b{font-size:15.5px; font-weight:800; letter-spacing:-.02em; display:block;}
+.brand-text span{font-size:10.5px; color:var(--text-muted);}
+.topnav-strip{display:flex; align-items:center; gap:4px; padding:0 20px 10px; overflow-x:auto; scrollbar-width:none;}
+.topnav-strip::-webkit-scrollbar{display:none;}
 .nav-item{
-  display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:9px;
-  color:var(--text-muted); font-weight:500; font-size:13.5px; border:none; background:none; text-align:left; width:100%;
-  transition:background .12s, color .12s;
+  display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:9px;
+  color:var(--text-muted); font-weight:500; font-size:13.5px; border:none; background:none; white-space:nowrap;
+  transition:background .12s, color .12s; flex-shrink:0;
 }
 .nav-item:hover{background:var(--surface-2); color:var(--text);}
 .nav-item.active{background:var(--primary-tint); color:var(--primary-dark); font-weight:600;}
-.nav-item .ic{font-size:16px; width:18px; text-align:center;}
-.sidebar-foot{padding:14px 20px; border-top:1px solid var(--border);}
-.sidebar-foot .hint{font-size:11px; color:var(--text-faint); line-height:1.5;}
+.nav-item .ic{font-size:15px;}
+.sidebar-foot{display:none;}
 
 /* ---- Main ---- */
 .main{flex:1; min-width:0; display:flex; flex-direction:column;}
 .topbar{
   display:flex; align-items:center; gap:14px; padding:14px 28px; background:var(--surface);
-  border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20;
+  border-bottom:1px solid var(--border);
 }
 .searchbox{
   flex:1; max-width:420px; display:flex; align-items:center; gap:8px; background:var(--surface-2);
@@ -275,31 +277,15 @@ a{color:inherit;}
 .mobile-overlay{display:none;}
 
 @media(max-width:880px){
-  .app{position:relative;}
-  .sidebar{
-    position:fixed; top:0; left:0; height:100vh; z-index:300;
-    transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 0 rgba(0,0,0,0);
-  }
-  .sidebar.open{ transform:translateX(0); box-shadow:0 0 40px rgba(0,0,0,.25); }
-  .mobile-overlay{
-    display:none; position:fixed; inset:0; background:rgba(15,18,24,.45); z-index:290;
-  }
-  .mobile-overlay.open{ display:block; }
-  .mobile-topbar{
-    display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface);
-    border-bottom:1px solid var(--border); position:sticky; top:0; z-index:60;
-  }
-  .mobile-topbar .hamburger{
-    width:38px; height:38px; border-radius:10px; border:1px solid var(--border); background:var(--surface);
-    display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
-  }
+  .topnav-main{padding:10px 14px; flex-wrap:wrap;}
+  .topnav-main .searchbox{order:3; max-width:none; width:100%; margin-top:6px;}
+  .topnav-main .shortcuts-hint{display:none;}
+  .topnav-strip{padding:0 10px 10px;}
+  .brand-text span{display:none;}
   .topbar{ flex-wrap:wrap; gap:8px; padding:10px 14px; }
   .topbar .searchbox{ order:1; max-width:none; width:100%; }
   .topbar > div[style*="flex:1"]{ display:none; }
   .topbar > div[title="Atalhos de teclado"]{ display:none; }
-  .icon-btn{ order:2; }
-  .topbar .icon-btn{ display:none; }
-  .mobile-topbar{ display:flex !important; }
   .content{padding:16px 12px 60px;}
   .grid.g4{grid-template-columns:1fr 1fr; gap:10px;}
   .grid.g3{grid-template-columns:1fr;}
@@ -353,7 +339,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-revertido-ao-design-anterior';
+const APP_VERSION = '2026.07.24-tema-escuro-nav-topo';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -805,38 +791,34 @@ const NAV_ITEMS = [
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="mobile-overlay ${state.mobileNavOpen?'open':''}" onclick="toggleMobileNav(false)"></div>
-    <div class="sidebar ${state.mobileNavOpen?'open':''}">
-      <div class="brand">
-        <div class="brand-icon">💰</div>
-        <div class="brand-text"><b>orça•me</b><span>Controle financeiro pessoal</span></div>
-      </div>
-      <div class="nav">
-        ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}'); toggleMobileNav(false);"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
-      </div>
-      <div class="sidebar-foot"><div class="hint">${supa && !usingFallbackStorage ? '🟢 Conectado ao Supabase' : '🟡 Salvando localmente neste navegador'}</div>${(usingFallbackStorage && window._lastSupaError) ? `<div class="hint" style="margin-top:6px; color:var(--danger); word-break:break-word;">Erro: ${esc(window._lastSupaError)}</div>` : ''}<button class="btn btn-sm btn-outline" style="width:100%; margin-top:8px; justify-content:center;" onclick="exportBackup()">⬇️ Baixar backup</button><div class="hint" style="margin-top:6px; font-family:var(--mono); color:var(--text-faint);">build ${APP_VERSION}</div></div>
-    </div>
-    <div class="main">
-      <div class="mobile-topbar">
-        <button class="hamburger" onclick="toggleMobileNav(true)">☰</button>
-        <b style="font-size:15px;">orça•me</b>
-        <div style="flex:1"></div>
-        <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
-      </div>
-      <div class="topbar">
+    <div class="topnav">
+      <div class="topnav-main">
+        <div class="brand">
+          <div class="brand-icon">💰</div>
+          <div class="brand-text"><b>orça•me</b><span>Controle financeiro pessoal</span></div>
+        </div>
         <div class="searchbox">🔎<input id="globalSearch" placeholder="Buscar transações, cartões..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
         <div style="flex:1"></div>
-        <div style="font-size:11px; color:var(--text-faint); margin-right:14px; display:flex; gap:10px;" title="Atalhos de teclado">
+        <div class="shortcuts-hint" style="font-size:11px; color:var(--text-faint); margin-right:6px; display:flex; gap:10px;" title="Atalhos de teclado">
           <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">N</kbd> despesa</span>
           <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">R</kbd> receita</span>
           <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">/</kbd> buscar</span>
         </div>
         <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
+        <button class="icon-btn" title="Baixar backup" onclick="exportBackup()">⬇️</button>
       </div>
+      <div class="topnav-strip">
+        ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}')"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
+        <div style="flex:1"></div>
+        <span style="font-size:10px; color:var(--text-faint); font-family:var(--mono); white-space:nowrap; padding:8px 6px; display:flex; align-items:center; gap:6px;">${supa && !usingFallbackStorage ? '🟢' : '🟡'} build ${APP_VERSION}</span>
+      </div>
+    </div>
+    <div class="main">
       <div class="content" id="content"></div>
     </div>
   `;
   renderPage();
+
 }
 
 function nav(page){ state.page=page; state.editing=null; if(page==='cartoes') state.cartoesView='grid'; try{ localStorage.setItem('orcame:lastPage', page); }catch(_){} render(); }
@@ -995,7 +977,7 @@ function pagePainel(){
             ${catEntries.map(([cid,val])=>{
               const pct=totalDespesas? (val/totalDespesas*100):0;
               if(cid==='__cartoes__'){
-                return `<div class="legend-row oc-hoverable" style="cursor:pointer;" onclick="nav('cartoes')" data-tip-label="💳 Cartões" data-tip-pct="ver detalhes na página Cartões" data-tip-value="${esc(fmtBRL(val))}"><span class="legend-dot" style="background:#171B21"></span><span class="legend-name">💳 Cartões (ver detalhes →)</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`;
+                return `<div class="legend-row oc-hoverable" style="cursor:pointer;" onclick="nav('cartoes')" data-tip-label="💳 Cartões" data-tip-pct="ver detalhes na página Cartões" data-tip-value="${esc(fmtBRL(val))}"><span class="legend-dot" style="background:var(--text)"></span><span class="legend-name">💳 Cartões (ver detalhes →)</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`;
               }
               const c=catById(cid); const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
@@ -1859,8 +1841,8 @@ function pageRelatorios(){
             const hVar = (p.variavel/projMax*110); const hComp = (p.comprometido/projMax*110);
             return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; z-index:1;">
               <div class="oc-hoverable" data-tip-label="${p.label} (projeção)" data-tip-pct="variável ${esc(fmtBRL(p.variavel))} + parcelas ${esc(fmtBRL(p.comprometido))}" data-tip-value="${esc(fmtBRL(p.total))}" style="width:34px; display:flex; flex-direction:column-reverse; border:1.5px dashed var(--text-faint); border-radius:6px; overflow:hidden;">
-                <div style="height:${hVar}px; background:repeating-linear-gradient(135deg, var(--primary-tint), var(--primary-tint) 4px, #fff 4px, #fff 8px);"></div>
-                <div style="height:${hComp}px; background:repeating-linear-gradient(135deg, var(--info-tint), var(--info-tint) 4px, #fff 4px, #fff 8px);"></div>
+                <div style="height:${hVar}px; background:repeating-linear-gradient(135deg, var(--primary-tint), var(--primary-tint) 4px, var(--surface-2) 4px, var(--surface-2) 8px);"></div>
+                <div style="height:${hComp}px; background:repeating-linear-gradient(135deg, var(--info-tint), var(--info-tint) 4px, var(--surface-2) 4px, var(--surface-2) 8px);"></div>
               </div>
               <div style="font-size:10.5px; color:var(--text-faint); font-weight:600;">${p.label}</div>
               <div style="font-family:var(--mono); font-size:10.5px; font-weight:700;">${fmtBRL(p.total)}</div>
