@@ -377,7 +377,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.11-fix-sticky-nav-bug';
+const APP_VERSION = '2026.07.11-design-consistencia';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1369,18 +1369,30 @@ function pageCartoes(){
             ${cardOverviewEntries.map(([cid,val])=>{ const c=cardById(cid); const color=PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length];
               return `<span style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600;"><span class="legend-dot" style="background:${color}"></span>${c?esc(c.name):'—'}</span>`; }).join('')}
           </div>
-        </div>`}
+        </div>
+        <div style="font-size:10.5px; color:var(--text-faint); margin-top:10px; border-top:1px solid var(--surface-2); padding-top:8px;">total líquido do mês (após créditos/estornos)</div>
+        `}
       </div>` : ''}
       <div class="card" style="padding:16px 20px;">
         <div class="section-title" style="margin-bottom:14px;"><h3>Despesas por Categoria nos Cartões</h3><span class="meta">${monthLabel(state.month)}</span></div>
         ${catCartaoEntries.length===0? emptyState('🍕','Nenhuma despesa no cartão neste mês',' ') : `
         <div style="display:flex; gap:28px; align-items:flex-start;">
           <div class="donut-wrap" id="chartCatCartao" style="width:110px;height:110px;flex-shrink:0;position:relative; margin-top:4px;"></div>
-          <div style="flex:1; min-width:0;">
-            ${catCartaoEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesasCartaoGross?(val/totalDespesasCartaoGross*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length];
-              return `<div class="legend-row legend-row-tight"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:9px;">
+            ${(()=>{ const maxCatVal = Math.max(...catCartaoEntries.map(e=>e[1]),1); return catCartaoEntries.map(([cid,val])=>{ const c=catById(cid); const pct=totalDespesasCartaoGross?(val/totalDespesasCartaoGross*100):0; const color=PALETTE[DB.cats.findIndex(x=>x.id===cid)%PALETTE.length]; const barPct=(val/maxCatVal*100);
+              return `<div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                  <span style="font-size:13px;">${c?c.icon:'📦'}</span>
+                  <span style="flex:1; min-width:0; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c?esc(c.name):'Outros'}</span>
+                  <span style="font-family:var(--mono); font-size:11.5px; color:var(--text-faint);">${pct.toFixed(1)}%</span>
+                  <span style="font-family:var(--mono); font-size:12.5px; font-weight:700; width:88px; text-align:right;">${fmtBRL(val)}</span>
+                </div>
+                <div class="progress-track oc-hoverable" style="height:5px;" data-tip-label="${c?esc(c.name):'Outros'}" data-tip-pct="${pct.toFixed(1)}% dos gastos no cartão" data-tip-value="${esc(fmtBRL(val))}"><div class="progress-fill" style="width:${barPct}%; background:${color};"></div></div>
+              </div>`; }).join(''); })()}
           </div>
-        </div>`}
+        </div>
+        <div style="font-size:10.5px; color:var(--text-faint); margin-top:12px; border-top:1px solid var(--surface-2); padding-top:8px;">total bruto do período — categorias não incluem créditos/estornos, por isso pode diferir do total líquido ao lado</div>
+        `}
       </div>
     </div>
 
@@ -1406,7 +1418,7 @@ function pageCartoes(){
                 return `<div style="padding:12px 16px 0;"><div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-bottom:5px;"><span>Limite usado</span><span>${pct.toFixed(0)}% de ${fmtBRL(c.limit)}</span></div><div class="progress-track oc-hoverable" data-tip-label="${esc(c.name)} — limite usado" data-tip-pct="${pct.toFixed(1)}% do limite" data-tip-value="${esc(fmtBRL(debtTotal))}"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div></div>`; })() : ''}
               <div class="ccard-foot" style="padding:12px 16px;">
                 <div>Dívida Atual<b class="down">${fmtBRL(debtTotal)}</b></div>
-                <div>Fatura de ${MONTHS_SHORT[state.month.getMonth()]}<b>${fmtBRL(faturaMes)}</b>${creditsMes>0?`<span style="display:block;font-size:10px;color:var(--primary-dark);font-weight:600;">− ${fmtBRL(creditsMes)} em créditos</span>`:''}</div>
+                <div>Fatura de ${MONTHS_SHORT[state.month.getMonth()]}<b style="font-size:15.5px; color:var(--text);">${fmtBRL(faturaMes)}</b>${creditsMes>0?`<span style="display:block;font-size:10px;color:var(--primary-dark);font-weight:600;">− ${fmtBRL(creditsMes)} em créditos</span>`:''}</div>
                 <div>Compras<b>${compras}</b></div>
               </div>
               <div class="card-actions-row" style="padding:0 14px 12px; flex-wrap:wrap;">
@@ -2075,7 +2087,7 @@ function svgDonut(segments, size, thickness, showLabels){
       const midFrac = (offset/circ) + frac/2;
       const midAngle = -Math.PI/2 + midFrac*2*Math.PI;
       const lx = cx + labelR*Math.cos(midAngle), ly = cy + labelR*Math.sin(midAngle);
-      labelEl = `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#fff" style="paint-order:stroke; stroke:rgba(0,0,0,.28); stroke-width:2.5px; pointer-events:none;">${pctLabel}</text>`;
+      labelEl = `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="800" fill="#fff" style="paint-order:stroke; stroke:rgba(0,0,0,.45); stroke-width:3.5px; stroke-linejoin:round; pointer-events:none;">${pctLabel}</text>`;
     }
     offset += frac*circ;
     return el+labelEl;
