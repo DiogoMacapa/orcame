@@ -376,7 +376,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.11-fix-dedup-parcelas-data';
+const APP_VERSION = '2026.07.11-visaogeral-compacta-verificada';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 let state = {
   page:'painel',
@@ -1349,16 +1349,16 @@ function pageCartoes(){
       <div class="head-actions">${monthNav()}<button class="btn btn-outline" onclick="state.txFilterCard='todos'; state.cartoesView='extrato'; renderPage();">📋 Ver extrato</button><button class="btn btn-primary" onclick="openCardModal(null)">+ Novo cartão</button></div>
     </div>
     ${DB.cards.length>0 ? `
-    <div class="grid g2" style="margin-bottom:16px; align-items:start;">
+    <div class="grid" style="margin-bottom:16px; align-items:start; grid-template-columns:${DB.cards.length>1?'0.72fr 1.28fr':'1fr'}; gap:16px;">
       ${DB.cards.length>1 ? `
-      <div class="card card-pad">
-        <div class="section-title"><h3>Visão Geral dos Cartões</h3><span class="meta">${monthLabel(state.month)}</span></div>
+      <div class="card" style="padding:14px 16px;">
+        <div class="section-title" style="margin-bottom:10px;"><h3 style="font-size:13px;">Visão Geral dos Cartões</h3></div>
         ${cardOverviewEntries.length===0? emptyState('💳','Nenhum gasto no cartão neste mês',' ') : `
-        <div style="display:flex; gap:14px; align-items:center;">
-          <div class="donut-wrap" id="chartCardOverview" style="width:92px;height:92px;flex-shrink:0;position:relative;"></div>
-          <div style="flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:6px 14px;">
+        <div style="display:flex; gap:12px; align-items:center;">
+          <div class="donut-wrap" id="chartCardOverview" style="width:76px;height:76px;flex-shrink:0;position:relative;"></div>
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:5px;">
             ${cardOverviewEntries.map(([cid,val])=>{ const c=cardById(cid); const color=PALETTE[DB.cards.findIndex(x=>x.id===cid)%PALETTE.length];
-              return `<span style="display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600;"><span class="legend-dot" style="background:${color}"></span>${c?esc(c.name):'—'}</span>`; }).join('')}
+              return `<span style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600;"><span class="legend-dot" style="background:${color}"></span>${c?esc(c.name):'—'}</span>`; }).join('')}
           </div>
         </div>`}
       </div>` : ''}
