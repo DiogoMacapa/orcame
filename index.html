@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-duplicar-mes';
+const APP_VERSION = '2026.07.24-duplicar-mes-fix-cartao';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -2700,12 +2700,12 @@ function openDuplicateMonthModal(){
   const src = new Date(state.month);
   const tgt = new Date(src.getFullYear(), src.getMonth()+1, 1);
   const srcMk = src.getFullYear()+'-'+String(src.getMonth()+1).padStart(2,'0');
-  const count = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk).length;
+  const count = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod!=='cartao' && txMonthKey(t)===srcMk).length;
   openModal(`
     <div class="modal" style="max-width:420px;">
       <div class="modal-head"><h3>Duplicar despesas de um mês</h3><button class="close-x" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
-        <div class="hint-box">Copia todas as despesas do mês de origem para o mês de destino, como novos lançamentos pendentes — o mês de origem não é alterado. Depois é só ajustar cada uma manualmente.</div>
+        <div class="hint-box">Copia as despesas em pix/dinheiro/transferência do mês de origem para o mês de destino, como novos lançamentos pendentes — <b>não inclui despesas de cartão de crédito</b> (essas você importa direto da fatura). O mês de origem não é alterado.</div>
         <div class="field"><label>Mês de origem</label><input class="input full" id="f_dupSrc" type="month" value="${srcMk}" onchange="updateDupCount()"></div>
         <div class="field"><label>Mês de destino</label><input class="input full" id="f_dupTgt" type="month" value="${tgt.getFullYear()}-${String(tgt.getMonth()+1).padStart(2,'0')}"></div>
         <div id="dupCountInfo" style="font-size:12.5px; color:var(--text-muted);">${count} despesa(s) serão copiadas.</div>
@@ -2719,7 +2719,7 @@ function openDuplicateMonthModal(){
 }
 function updateDupCount(){
   const srcMk = document.getElementById('f_dupSrc').value;
-  const count = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk).length;
+  const count = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod!=='cartao' && txMonthKey(t)===srcMk).length;
   document.getElementById('dupCountInfo').textContent = count+' despesa(s) serão copiadas.';
 }
 function confirmDuplicateMonth(){
@@ -2728,7 +2728,7 @@ function confirmDuplicateMonth(){
   if(!srcMk || !tgtMk){ toast('Selecione os dois meses','danger'); return; }
   if(srcMk===tgtMk){ toast('Escolha meses diferentes','danger'); return; }
   const [tgtY, tgtM] = tgtMk.split('-').map(Number);
-  const sourceRows = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk);
+  const sourceRows = DB.tx.filter(t=>t.type==='despesa' && t.paymentMethod!=='cartao' && txMonthKey(t)===srcMk);
   if(sourceRows.length===0){ toast('Nenhuma despesa encontrada no mês de origem','danger'); return; }
   confirmAction(`Duplicar ${sourceRows.length} despesa(s) de ${srcMk} para ${tgtMk} como novos lançamentos pendentes?`, ()=>{
     const now = new Date().toISOString();
