@@ -310,7 +310,13 @@ a{color:inherit;}
 </head>
 <body>
 
-<div class="app" id="app"></div>
+<div class="app" id="app">
+  <div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;">
+    <div style="width:40px; height:40px; border-radius:50%; border:3px solid var(--surface-2); border-top-color:var(--primary); animation:oc-spin .8s linear infinite;"></div>
+    <div style="color:var(--text-faint); font-size:13px;">Carregando orça•me...</div>
+  </div>
+</div>
+<style>@keyframes oc-spin{to{transform:rotate(360deg);}}</style>
 <div id="toastWrap"></div>
 <div id="ocTooltip"></div>
 
@@ -339,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-filtro-mes-transacoes';
+const APP_VERSION = '2026.07.24-carregamento-mais-rapido';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -377,7 +383,17 @@ async function sbRequestOnce(method, table, opts={}){
   const headers = {};
   if(opts.body) headers['Content-Type'] = 'application/json';
   if(opts.prefer) headers['Prefer'] = opts.prefer;
-  const res = await fetch(url, { method, headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), 12000);
+  let res;
+  try{
+    res = await fetch(url, { method, headers, body: opts.body ? JSON.stringify(opts.body) : undefined, signal: controller.signal });
+  }catch(e){
+    if(e.name==='AbortError') throw new Error('Tempo esgotado ao conectar com o Supabase (12s)');
+    throw e;
+  }finally{
+    clearTimeout(timeoutId);
+  }
   if(!res.ok){
     let msg = 'HTTP '+res.status;
     try{ const j = await res.json(); msg = j.message || j.error_description || JSON.stringify(j); }catch(_){}
@@ -480,21 +496,29 @@ const fromDbRow = {
 
 async function loadAll(){
   let allEmpty = true;
-  for(const key of Object.keys(TABLE_MAP)){
+  const keys = Object.keys(TABLE_MAP);
+  const results = await Promise.all(keys.map(async key=>{
     try{
       const data = await sbRequest('GET', TABLE_MAP[key], {query:'?select=*&order=created_at.asc'});
+      return {key, ok:true, data};
+    }catch(e){
+      return {key, ok:false, error:e};
+    }
+  }));
+  results.forEach(({key, ok, data, error})=>{
+    if(ok){
       DB[key] = (data||[]).map(fromDbRow[key]);
       supa = true;
       if(DB[key].length>0) allEmpty = false;
       if(!_persistSnapshot[key]) _persistSnapshot[key] = new Map();
       DB[key].map(toDbRow[key]).forEach(r=>_persistSnapshot[key].set(String(r.id), JSON.stringify(r)));
-    }catch(e){
-      console.error('Falha ao carregar '+key+' do Supabase:', e);
-      window._lastSupaError = (e && e.message) || String(e);
+    } else {
+      console.error('Falha ao carregar '+key+' do Supabase:', error);
+      window._lastSupaError = (error && error.message) || String(error);
       usingFallbackStorage = true;
       try{ const raw = localStorage.getItem('orcame:'+key); DB[key] = raw?JSON.parse(raw):[]; }catch(_){ DB[key]=[]; }
     }
-  }
+  });
   // migracao unica: se supabase estava totalmente vazio mas existe dado local antigo, sobe pro supabase
   if(supa && allEmpty && !usingFallbackStorage){
     for(const key of Object.keys(TABLE_MAP)){
