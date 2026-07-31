@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-carregamento-mais-rapido';
+const APP_VERSION = '2026.07.24-duplicar-mes';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1219,6 +1219,7 @@ function pageTransacoes(){
     <div class="page-head">
       <div><h1>Transações</h1><p>${list.length} registro(s) · pix, dinheiro e transferência${state.txMonthFilterOn?' · '+monthLabel(state.month):' · todos os períodos'}</p></div>
       <div class="head-actions">
+        <button class="btn btn-outline" onclick="openDuplicateMonthModal()">📋 Duplicar mês</button>
         <button class="btn btn-primary" onclick="openTxModal(null)">+ Nova</button>
       </div>
     </div>
@@ -2695,6 +2696,58 @@ function learnMerchantRule(description, category, type){
   persist('merchantRules');
 }
 
+function openDuplicateMonthModal(){
+  const src = new Date(state.month);
+  const tgt = new Date(src.getFullYear(), src.getMonth()+1, 1);
+  const srcMk = src.getFullYear()+'-'+String(src.getMonth()+1).padStart(2,'0');
+  const count = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk).length;
+  openModal(`
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head"><h3>Duplicar despesas de um mês</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="hint-box">Copia todas as despesas do mês de origem para o mês de destino, como novos lançamentos pendentes — o mês de origem não é alterado. Depois é só ajustar cada uma manualmente.</div>
+        <div class="field"><label>Mês de origem</label><input class="input full" id="f_dupSrc" type="month" value="${srcMk}" onchange="updateDupCount()"></div>
+        <div class="field"><label>Mês de destino</label><input class="input full" id="f_dupTgt" type="month" value="${tgt.getFullYear()}-${String(tgt.getMonth()+1).padStart(2,'0')}"></div>
+        <div id="dupCountInfo" style="font-size:12.5px; color:var(--text-muted);">${count} despesa(s) serão copiadas.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmDuplicateMonth()">Duplicar</button>
+      </div>
+    </div>
+  `);
+}
+function updateDupCount(){
+  const srcMk = document.getElementById('f_dupSrc').value;
+  const count = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk).length;
+  document.getElementById('dupCountInfo').textContent = count+' despesa(s) serão copiadas.';
+}
+function confirmDuplicateMonth(){
+  const srcMk = document.getElementById('f_dupSrc').value;
+  const tgtMk = document.getElementById('f_dupTgt').value;
+  if(!srcMk || !tgtMk){ toast('Selecione os dois meses','danger'); return; }
+  if(srcMk===tgtMk){ toast('Escolha meses diferentes','danger'); return; }
+  const [tgtY, tgtM] = tgtMk.split('-').map(Number);
+  const sourceRows = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===srcMk);
+  if(sourceRows.length===0){ toast('Nenhuma despesa encontrada no mês de origem','danger'); return; }
+  confirmAction(`Duplicar ${sourceRows.length} despesa(s) de ${srcMk} para ${tgtMk} como novos lançamentos pendentes?`, ()=>{
+    const now = new Date().toISOString();
+    sourceRows.forEach((t,i)=>{
+      const origDate = parseISO(t.date);
+      const day = Math.min(origDate.getDate(), new Date(tgtY, tgtM, 0).getDate()); // ajusta se o dia nao existir no mes destino
+      const newDate = tgtY+'-'+String(tgtM).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+      DB.tx.push({
+        id: uid(), type:'despesa', description:t.description, category:t.category, amount:t.amount,
+        date:newDate, status:'pendente', paymentMethod:t.paymentMethod, cardId:t.cardId||'',
+        installmentCurrent:t.installmentCurrent||'', installmentTotal:t.installmentTotal||'',
+        invoiceMonth: t.paymentMethod==='cartao' ? tgtMk : '',
+        recurring: !!t.recurring, dueDate:'', notes:t.notes||'',
+        createdAt: new Date(new Date(now).getTime()+i).toISOString(),
+      });
+    });
+    persist('tx').then(()=>{ closeModal(); toast(sourceRows.length+' despesa(s) duplicadas para '+tgtMk); state.month=new Date(tgtY,tgtM-1,1); renderPage(); });
+  });
+}
 function openImportModal(){
   state.importStep = 0; state.importRows = []; state.importRawText = '';
   const contextCard = (state.txFilterCard && state.txFilterCard!=='todos') ? state.txFilterCard : null;
