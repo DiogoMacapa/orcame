@@ -339,7 +339,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-tema-escuro-nav-topo';
+const APP_VERSION = '2026.07.24-filtro-mes-transacoes';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -358,6 +358,7 @@ let state = {
   editing:null,
   importStep:0, importRows:[], importRawText:'', importCardId:null,
   selectedTx: new Set(),
+  txMonthFilterOn: false,
   mobileNavOpen: false,
   treeDrill: null,
 };
@@ -1121,6 +1122,7 @@ function getFilteredTxList(scope){
   let list = [...DB.tx];
   if(scope==='cartao') list = list.filter(t=>t.paymentMethod==='cartao');
   else if(scope==='nao-cartao') list = list.filter(t=>t.paymentMethod!=='cartao');
+  if(state.txMonthFilterOn) list = list.filter(t=>inSelectedMonth(t, state.month));
   if(state.txFilterType!=='todos') list = list.filter(t=>t.type===state.txFilterType);
   if(state.txFilterStatus!=='todos') list = list.filter(t=>t.status===state.txFilterStatus);
   if(state.txFilterCard!=='todos') list = list.filter(t=>t.cardId===state.txFilterCard);
@@ -1133,6 +1135,7 @@ function getFilteredTxList(scope){
   list.sort((a,b)=>parseISO(b.date)-parseISO(a.date));
   return list;
 }
+function toggleTxMonthFilter(){ state.txMonthFilterOn = !state.txMonthFilterOn; renderPage(); }
 function renderTxFiltersAndList(scope, opts){
   opts = opts || {};
   const list = getFilteredTxList(scope);
@@ -1146,6 +1149,8 @@ function renderTxFiltersAndList(scope, opts){
     </div>` : ''}
     <div class="filters-bar">
       <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
+      <button class="btn btn-sm ${state.txMonthFilterOn?'btn-primary':'btn-outline'}" onclick="toggleTxMonthFilter()">📅 ${state.txMonthFilterOn?'Filtrando por mês':'Todos os períodos'}</button>
+      ${state.txMonthFilterOn?monthNav():''}
       <select class="select" onchange="state.txFilterType=this.value; renderPage();">
         <option value="todos" ${state.txFilterType==='todos'?'selected':''}>Todos os tipos</option>
         <option value="receita" ${state.txFilterType==='receita'?'selected':''}>Receitas</option>
@@ -1188,7 +1193,7 @@ function pageTransacoes(){
   const list = getFilteredTxList('nao-cartao');
   return `
     <div class="page-head">
-      <div><h1>Transações</h1><p>${list.length} registro(s) · pix, dinheiro e transferência</p></div>
+      <div><h1>Transações</h1><p>${list.length} registro(s) · pix, dinheiro e transferência${state.txMonthFilterOn?' · '+monthLabel(state.month):' · todos os períodos'}</p></div>
       <div class="head-actions">
         <button class="btn btn-primary" onclick="openTxModal(null)">+ Nova</button>
       </div>
