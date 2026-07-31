@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-aba-conferencia-repasses';
+const APP_VERSION = '2026.07.24-conferencia-so-pacientes';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1703,11 +1703,11 @@ function pageConferenciaRepasses(){
           <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,1); renderPage();">›</button>
         </div>
       </div>
-      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:12px; margin-top:-6px;">quanto sacar do banco agora (já reservando o IR) e quanto sobra de lucro líquido após o repasse — só pra sua conferência, não afeta os totais do sistema</div>
+      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:12px; margin-top:-6px;">considera só receitas da categoria Atendimentos (pacientes) · quanto sacar do banco agora (já reservando o IR) e quanto sobra de lucro líquido após o repasse — só pra sua conferência, não afeta os totais do sistema</div>
       ${(()=>{
         const confMes = state.conferenciaMes || state.month;
         const confMk = confMes.getFullYear()+'-'+String(confMes.getMonth()+1).padStart(2,'0');
-        const receitasMes = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t)===confMk);
+        const receitasMes = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && t.category==='c-paciente' && txMonthKey(t)===confMk);
         const byPac = {};
         receitasMes.forEach(t=>{
           const key = (t.description||'—').trim();
