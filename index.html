@@ -281,6 +281,7 @@ a{color:inherit;}
   .topnav-main .searchbox{order:3; max-width:none; width:100%; margin-top:6px;}
   .topnav-main .shortcuts-hint{display:none;}
   .topnav-strip{padding:0 10px 10px;}
+  .build-tag{display:none;}
   .brand-text span{display:none;}
   .topbar{ flex-wrap:wrap; gap:8px; padding:10px 14px; }
   .topbar .searchbox{ order:1; max-width:none; width:100%; }
@@ -345,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-conferencia-repasses';
+const APP_VERSION = '2026.07.24-fix-mobile-layout';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -829,13 +830,13 @@ function render(){
           <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">R</kbd> receita</span>
           <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">/</kbd> buscar</span>
         </div>
+        <span class="icon-btn" title="${supa && !usingFallbackStorage ? 'Conectado ao Supabase' : 'Salvando localmente neste navegador'}" style="cursor:default; font-size:14px;">${supa && !usingFallbackStorage ? '🟢' : '🟡'}</span>
         <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
         <button class="icon-btn" title="Baixar backup" onclick="exportBackup()">⬇️</button>
       </div>
       <div class="topnav-strip">
         ${NAV_ITEMS.map(n=>`<button class="nav-item ${state.page===n.id?'active':''}" onclick="nav('${n.id}')"><span class="ic">${n.ic}</span>${n.label}</button>`).join('')}
-        <div style="flex:1"></div>
-        <span style="font-size:10px; color:var(--text-faint); font-family:var(--mono); white-space:nowrap; padding:8px 6px; display:flex; align-items:center; gap:6px;">${supa && !usingFallbackStorage ? '🟢' : '🟡'} build ${APP_VERSION}</span>
+        <span class="build-tag" style="font-size:10px; color:var(--text-faint); font-family:var(--mono); white-space:nowrap; padding:8px 10px; margin-left:auto; flex-shrink:0;">build ${APP_VERSION}</span>
       </div>
     </div>
     <div class="main">
@@ -1866,8 +1867,11 @@ function pageRelatorios(){
       </div>
       <div class="card card-pad">
         <div class="section-title"><h3>Projeção — Próximos 3 Meses</h3><span class="meta">estimativa</span></div>
-        <div style="height:150px; display:flex; align-items:flex-end; gap:16px; padding:0 8px 0 40px; position:relative;">
-          ${[0,0.25,0.5,0.75,1].map(f=>`<div style="position:absolute; left:0; right:0; bottom:${f*110}px; border-top:1px dashed var(--surface-2); font-size:9px; color:var(--text-faint); padding-left:0;"><span style="position:absolute; left:-38px; top:-6px;">${fmtBRL(projMax*f).replace('R$ ','')}</span></div>`).join('')}
+        <div style="height:150px; display:flex; align-items:flex-end; gap:12px; padding:0 8px; position:relative; margin-left:44px;">
+          <div style="position:absolute; left:-44px; top:0; bottom:0; width:40px;">
+            ${[1,0.75,0.5,0.25,0].map(f=>`<div style="position:absolute; left:0; width:40px; text-align:right; padding-right:6px; bottom:${f*110}px; transform:translateY(50%); font-size:9px; color:var(--text-faint); white-space:nowrap;">${fmtBRL(projMax*f).replace('R$ ','')}</div>`).join('')}
+          </div>
+          ${[0,0.25,0.5,0.75,1].map(f=>`<div style="position:absolute; left:0; right:0; bottom:${f*110}px; border-top:1px dashed var(--surface-2);"></div>`).join('')}
           ${projData.map(p=>{
             const hVar = (p.variavel/projMax*110); const hComp = (p.comprometido/projMax*110);
             return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; z-index:1;">
