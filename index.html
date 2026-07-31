@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-fix-mobile-layout';
+const APP_VERSION = '2026.07.24-aba-conferencia-repasses';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1692,7 +1692,91 @@ function filterByPeriodo(list){
   if(periodo==='ano'){ const ano = state.relatorioAno || new Date().getFullYear(); return list.filter(t=>txMonthKey(t).startsWith(String(ano))); }
   return list;
 }
+function pageConferenciaRepasses(){
+  return `
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="section-title">
+        <h3>Conferência de Repasses (Pacientes)</h3>
+        <div class="month-switch">
+          <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,-1); renderPage();">‹</button>
+          <span class="lbl">${monthLabel(state.conferenciaMes||state.month)}</span>
+          <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,1); renderPage();">›</button>
+        </div>
+      </div>
+      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:12px; margin-top:-6px;">quanto sacar do banco agora (já reservando o IR) e quanto sobra de lucro líquido após o repasse — só pra sua conferência, não afeta os totais do sistema</div>
+      ${(()=>{
+        const confMes = state.conferenciaMes || state.month;
+        const confMk = confMes.getFullYear()+'-'+String(confMes.getMonth()+1).padStart(2,'0');
+        const receitasMes = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t)===confMk);
+        const byPac = {};
+        receitasMes.forEach(t=>{
+          const key = (t.description||'—').trim();
+          if(!byPac[key]) byPac[key] = {bruto:0, irReais:0, repasse:0};
+          const ir = t.amount * (Number(t.taxPercent)||0)/100;
+          byPac[key].bruto += t.amount;
+          byPac[key].irReais += ir;
+          byPac[key].repasse += Number(t.repasseAmount)||0;
+        });
+        const rows = Object.entries(byPac).map(([nome,v])=>{
+          const sacar = v.bruto - v.irReais;
+          const liquido = sacar - v.repasse;
+          const irPct = v.bruto>0 ? (v.irReais/v.bruto*100) : 0;
+          return {nome, bruto:v.bruto, irPct, irReais:v.irReais, sacar, repasse:v.repasse, liquido};
+        }).sort((a,b)=>b.bruto-a.bruto);
+        if(rows.length===0) return emptyState('🧾','Nenhuma receita neste mês',' ');
+        const totals = rows.reduce((s,r)=>({bruto:s.bruto+r.bruto, irReais:s.irReais+r.irReais, sacar:s.sacar+r.sacar, repasse:s.repasse+r.repasse, liquido:s.liquido+r.liquido}), {bruto:0,irReais:0,sacar:0,repasse:0,liquido:0});
+        return `<table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="text-align:left; font-size:11px; color:var(--text-faint); text-transform:uppercase;">
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border)">Paciente</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Valor Bruto</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">IR %</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">IR $</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Sacar</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Repasse</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Lucro Líquido</th>
+          </tr></thead>
+          <tbody>
+          ${rows.map(r=>`<tr>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); font-weight:600;">${esc(r.nome)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono);">${fmtBRL(r.bruto)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--text-muted);">${r.irPct.toFixed(1)}%</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--danger);">${fmtBRL(r.irReais)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700;">${fmtBRL(r.sacar)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--info);">${fmtBRL(r.repasse)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(r.liquido)}</td>
+          </tr>`).join('')}
+          <tr>
+            <td style="padding:10px 8px; font-weight:800;">Total</td>
+            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800;">${fmtBRL(totals.bruto)}</td>
+            <td style="padding:10px 8px;"></td>
+            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--danger);">${fmtBRL(totals.irReais)}</td>
+            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800;">${fmtBRL(totals.sacar)}</td>
+            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--info);">${fmtBRL(totals.repasse)}</td>
+            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--primary-dark);">${fmtBRL(totals.liquido)}</td>
+          </tr>
+          </tbody>
+        </table>`;
+      })()}
+    </div>
+  `;
+}
 function pageRelatorios(){
+  if((state.relatoriosTab||'geral')==='conferencia') return pageRelatoriosWrapper(pageConferenciaRepasses());
+  return pageRelatoriosWrapper(pageRelatoriosGeral());
+}
+function pageRelatoriosWrapper(innerHtml){
+  return `
+    <div class="page-head">
+      <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos, comparativos e resumo anual</p></div>
+    </div>
+    <div class="tabs" style="margin-bottom:16px;">
+      <button class="tab ${(state.relatoriosTab||'geral')==='geral'?'active':''}" onclick="state.relatoriosTab='geral'; renderPage();">📊 Visão Geral</button>
+      <button class="tab ${(state.relatoriosTab||'geral')==='conferencia'?'active':''}" onclick="state.relatoriosTab='conferencia'; renderPage();">🧾 Conferência de Repasses</button>
+    </div>
+    ${innerHtml}
+  `;
+}
+function pageRelatoriosGeral(){
   const anoAtual = state.relatorioAno || new Date().getFullYear();
   const despesasAno = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && txMonthKey(t).startsWith(String(anoAtual)));
   const receitasAno = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t).startsWith(String(anoAtual)));
@@ -1802,10 +1886,6 @@ function pageRelatorios(){
   const projMax = Math.max(...projData.map(p=>p.total), baseVariable, 1);
 
   return `
-    <div class="page-head">
-      <div><h1>Relatórios</h1><p>Análise por estabelecimento, parcelamentos, comparativos e resumo anual</p></div>
-    </div>
-
     <div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
       <div class="tabs" style="margin-bottom:0;">
         <button class="tab ${(state.relatorioPeriodo||'tudo')==='mes'?'active':''}" onclick="state.relatorioPeriodo='mes'; renderPage();">Por Mês</button>
@@ -1993,71 +2073,6 @@ function pageRelatorios(){
         </tr>`; }).join('')}
         </tbody>
       </table>`}
-    </div>
-
-    <div class="card card-pad" style="margin-bottom:16px;">
-      <div class="section-title">
-        <h3>Conferência de Repasses (Pacientes)</h3>
-        <div class="month-switch">
-          <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,-1); renderPage();">‹</button>
-          <span class="lbl">${monthLabel(state.conferenciaMes||state.month)}</span>
-          <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,1); renderPage();">›</button>
-        </div>
-      </div>
-      <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:12px; margin-top:-6px;">quanto sacar do banco agora (já reservando o IR) e quanto sobra de lucro líquido após o repasse — só pra sua conferência, não afeta os totais do sistema</div>
-      ${(()=>{
-        const confMes = state.conferenciaMes || state.month;
-        const confMk = confMes.getFullYear()+'-'+String(confMes.getMonth()+1).padStart(2,'0');
-        const receitasMes = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t)===confMk);
-        const byPac = {};
-        receitasMes.forEach(t=>{
-          const key = (t.description||'—').trim();
-          if(!byPac[key]) byPac[key] = {bruto:0, irReais:0, repasse:0};
-          const ir = t.amount * (Number(t.taxPercent)||0)/100;
-          byPac[key].bruto += t.amount;
-          byPac[key].irReais += ir;
-          byPac[key].repasse += Number(t.repasseAmount)||0;
-        });
-        const rows = Object.entries(byPac).map(([nome,v])=>{
-          const sacar = v.bruto - v.irReais;
-          const liquido = sacar - v.repasse;
-          const irPct = v.bruto>0 ? (v.irReais/v.bruto*100) : 0;
-          return {nome, bruto:v.bruto, irPct, irReais:v.irReais, sacar, repasse:v.repasse, liquido};
-        }).sort((a,b)=>b.bruto-a.bruto);
-        if(rows.length===0) return emptyState('🧾','Nenhuma receita neste mês',' ');
-        const totals = rows.reduce((s,r)=>({bruto:s.bruto+r.bruto, irReais:s.irReais+r.irReais, sacar:s.sacar+r.sacar, repasse:s.repasse+r.repasse, liquido:s.liquido+r.liquido}), {bruto:0,irReais:0,sacar:0,repasse:0,liquido:0});
-        return `<table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="text-align:left; font-size:11px; color:var(--text-faint); text-transform:uppercase;">
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border)">Paciente</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Valor Bruto</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">IR %</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">IR $</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Sacar</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Repasse</th>
-            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Lucro Líquido</th>
-          </tr></thead>
-          <tbody>
-          ${rows.map(r=>`<tr>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); font-weight:600;">${esc(r.nome)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono);">${fmtBRL(r.bruto)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--text-muted);">${r.irPct.toFixed(1)}%</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--danger);">${fmtBRL(r.irReais)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700;">${fmtBRL(r.sacar)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--info);">${fmtBRL(r.repasse)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(r.liquido)}</td>
-          </tr>`).join('')}
-          <tr>
-            <td style="padding:10px 8px; font-weight:800;">Total</td>
-            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800;">${fmtBRL(totals.bruto)}</td>
-            <td style="padding:10px 8px;"></td>
-            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--danger);">${fmtBRL(totals.irReais)}</td>
-            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800;">${fmtBRL(totals.sacar)}</td>
-            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--info);">${fmtBRL(totals.repasse)}</td>
-            <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--primary-dark);">${fmtBRL(totals.liquido)}</td>
-          </tr>
-          </tbody>
-        </table>`;
-      })()}
     </div>
 
     <div class="card card-pad" style="margin-bottom:16px;">
