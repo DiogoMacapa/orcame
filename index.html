@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-mes-atual-e-popup-vencimentos';
+const APP_VERSION = '2026.07.24-aba-repasses';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1714,11 +1714,78 @@ function filterByPeriodo(list){
   if(periodo==='ano'){ const ano = state.relatorioAno || new Date().getFullYear(); return list.filter(t=>txMonthKey(t).startsWith(String(ano))); }
   return list;
 }
+function pageRepasses(){
+  const periodo = state.repassesPeriodo || 'mes';
+  const refMes = state.repassesMes || state.month;
+  const refAno = state.repassesAno || refMes.getFullYear();
+  const parceiras = DB.templates.filter(t=>t.type==='receita' && (t.repassePercent!=='' && t.repassePercent!=null) && (t.billingMode==='atendimento' || t.billingMode==='multiplo'));
+
+  const calcTotalParceira = (tpl, mk)=>{
+    const rows = DB.tx.filter(x=>x.type==='receita' && x.amount>0 && txMonthKey(x)===mk && normalizeMerchant(x.description).includes(normalizeMerchant(tpl.title)));
+    return rows.reduce((s,x)=>s+ (Number(x.repasseAmount)||0), 0);
+  };
+  let periodLabel, mesesParaSomar;
+  if(periodo==='mes'){
+    periodLabel = monthLabel(refMes);
+    mesesParaSomar = [refMes.getFullYear()+'-'+String(refMes.getMonth()+1).padStart(2,'0')];
+  } else {
+    periodLabel = 'ano de '+refAno;
+    mesesParaSomar = Array.from({length:12}, (_,i)=> refAno+'-'+String(i+1).padStart(2,'0'));
+  }
+
+  return `
+    <div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+      <div class="tabs" style="margin-bottom:0;">
+        <button class="tab ${periodo==='mes'?'active':''}" onclick="state.repassesPeriodo='mes'; renderPage();">Por Mês</button>
+        <button class="tab ${periodo==='ano'?'active':''}" onclick="state.repassesPeriodo='ano'; renderPage();">Por Ano</button>
+      </div>
+      ${periodo==='mes' ? `<div class="month-switch">
+        <button onclick="state.repassesMes=shiftMonthDate(state.repassesMes||state.month,-1); renderPage();">‹</button>
+        <span class="lbl">${monthLabel(refMes)}</span>
+        <button onclick="state.repassesMes=shiftMonthDate(state.repassesMes||state.month,1); renderPage();">›</button>
+      </div>` : `<div class="month-switch">
+        <button onclick="state.repassesAno=(state.repassesAno||refAno)-1; renderPage();">‹</button>
+        <span class="lbl">${refAno}</span>
+        <button onclick="state.repassesAno=(state.repassesAno||refAno)+1; renderPage();">›</button>
+      </div>`}
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="openTemplateModal(null); setTimeout(()=>{ state.editing.type='receita'; state.editing.billingMode='multiplo'; renderTemplateModal(); },0);">+ Nova parceira</button>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <div class="section-title"><h3>Parceiras cadastradas</h3><span class="meta">${periodLabel}</span></div>
+      ${parceiras.length===0? emptyState('🤝','Nenhuma parceira cadastrada ainda','Cadastre em Recorrentes (ou pelo botão acima) uma receita do tipo "Por atendimento" ou "Múltiplos serviços" com repasse (%) definido — ela aparece aqui automaticamente.') : `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+      ${parceiras.map(tpl=>{
+        const total = mesesParaSomar.reduce((s,mk)=>s+calcTotalParceira(tpl,mk), 0);
+        const rateInfo = tpl.billingMode==='multiplo'
+          ? (tpl.services||[]).map(s=>`${esc(s.name)}: ${fmtBRL(s.rate)}`).join(' · ')
+          : (tpl.sessionRate!=='' && tpl.sessionRate!=null ? fmtBRL(tpl.sessionRate)+'/atendimento' : 'valor variável por atendimento');
+        return `<div style="border:1px solid var(--border); border-radius:12px; padding:14px 16px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700; font-size:14px;">🤝 ${esc(tpl.title)}</div>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${rateInfo} · repasse ${tpl.repassePercent}%${tpl.irPercent?' · IR '+tpl.irPercent+'%':''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Total de repasse — ${periodLabel}</div>
+              <div style="font-family:var(--mono); font-size:17px; font-weight:700; color:var(--info);">${fmtBRL(total)}</div>
+            </div>
+          </div>
+          <div style="margin-top:10px; display:flex; gap:8px;">
+            <button class="btn btn-sm btn-outline" onclick="openTemplateModal('${tpl.id}')">✎ Editar parceira</button>
+          </div>
+        </div>`;
+      }).join('')}
+      </div>`}
+    </div>
+  `;
+}
 function pageConferenciaRepasses(){
   return `
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title">
-        <h3>Conferência de Repasses (Pacientes)</h3>
+        <h3>Cálculo para Saques (Pacientes)</h3>
         <div class="month-switch">
           <button onclick="state.conferenciaMes=shiftMonthDate(state.conferenciaMes||state.month,-1); renderPage();">‹</button>
           <span class="lbl">${monthLabel(state.conferenciaMes||state.month)}</span>
@@ -1784,6 +1851,7 @@ function pageConferenciaRepasses(){
 }
 function pageRelatorios(){
   if((state.relatoriosTab||'geral')==='conferencia') return pageRelatoriosWrapper(pageConferenciaRepasses());
+  if((state.relatoriosTab||'geral')==='parceiras') return pageRelatoriosWrapper(pageRepasses());
   return pageRelatoriosWrapper(pageRelatoriosGeral());
 }
 function pageRelatoriosWrapper(innerHtml){
@@ -1793,7 +1861,8 @@ function pageRelatoriosWrapper(innerHtml){
     </div>
     <div class="tabs" style="margin-bottom:16px;">
       <button class="tab ${(state.relatoriosTab||'geral')==='geral'?'active':''}" onclick="state.relatoriosTab='geral'; renderPage();">📊 Visão Geral</button>
-      <button class="tab ${(state.relatoriosTab||'geral')==='conferencia'?'active':''}" onclick="state.relatoriosTab='conferencia'; renderPage();">🧾 Conferência de Repasses</button>
+      <button class="tab ${(state.relatoriosTab||'geral')==='conferencia'?'active':''}" onclick="state.relatoriosTab='conferencia'; renderPage();">🧾 Cálculo para Saques</button>
+      <button class="tab ${(state.relatoriosTab||'geral')==='parceiras'?'active':''}" onclick="state.relatoriosTab='parceiras'; renderPage();">🤝 Repasses</button>
     </div>
     ${innerHtml}
   `;
