@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-conferencia-so-pacientes';
+const APP_VERSION = '2026.07.24-mes-atual-e-popup-vencimentos';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -358,7 +358,7 @@ function _getInitialPage(){
 }
 let state = {
   page:_getInitialPage(),
-  month: new Date(2026,6,1), // Julho 2026 context
+  month: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(), // sempre o mes atual de verdade
   search:'',
   txFilterType:'todos', txFilterStatus:'todos', txFilterCard:'todos',
   catTab:'despesa',
@@ -610,6 +610,28 @@ function getAlerts(){
   });
   alerts.sort((a,b)=> (a.kind==='atrasado'?-1:0) - (b.kind==='atrasado'?-1:0) || a.urgency-b.urgency);
   return alerts;
+}
+function showStartupAlertsPopup(){
+  const today = new Date().toISOString().slice(0,10);
+  try{ if(localStorage.getItem('orcame:lastAlertPopup')===today) return; }catch(_){}
+  const alerts = getAlerts();
+  if(alerts.length===0) return;
+  openModal(`
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head"><h3>⏰ Vencimentos próximos</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body" style="max-height:60vh; overflow:auto;">
+        ${alerts.map(a=>`<div style="padding:11px 4px; border-bottom:1px solid var(--surface-2); display:flex; justify-content:space-between; gap:10px;">
+          <div><div style="font-weight:600; font-size:13px;">${esc(a.label)}</div><div style="font-size:11.5px; color:${a.kind==='atrasado'?'var(--danger)':'var(--warning)'};">${esc(a.sub)}</div></div>
+          <div style="font-family:var(--mono); font-size:13px; font-weight:700; white-space:nowrap;">${fmtBRL(a.value)}</div>
+        </div>`).join('')}
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Fechar</button>
+        <button class="btn btn-primary" onclick="closeModal(); nav('painel');">Ver no Painel</button>
+      </div>
+    </div>
+  `);
+  try{ localStorage.setItem('orcame:lastAlertPopup', today); }catch(_){}
 }
 function toggleAlertsPanel(ev){
   ev.stopPropagation();
@@ -3070,6 +3092,7 @@ document.addEventListener('keydown', function(e){
       setTimeout(()=>toast('Armazenamento na nuvem indisponível — seus dados estão sendo salvos apenas neste navegador.'), 400);
     }
     setTimeout(()=>checkAutoBackup(), 1200);
+    setTimeout(()=>showStartupAlertsPopup(), 700);
   }catch(e){
     console.error('Falha ao renderizar o app:', e);
     document.getElementById('app').innerHTML = '<div style="padding:50px; font-family:Inter,sans-serif; max-width:520px; margin:0 auto; text-align:center; color:#374151;">'+
