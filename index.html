@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-aba-repasses';
+const APP_VERSION = '2026.07.24-parceiras-em-transacao';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -435,6 +435,7 @@ const toDbRow = {
     tax_percent:(t.taxPercent===''||t.taxPercent==null)?null:Number(t.taxPercent),
     repasse_amount:(t.repasseAmount===''||t.repasseAmount==null)?null:Number(t.repasseAmount),
     paid_at: t.paidAt || null,
+    partner_repasses: (t.partnerRepasses && t.partnerRepasses.length) ? t.partnerRepasses : null,
   }),
   cards: c => ({
     id:c.id, name:c.name, bank:c.bank||null, last_digits:c.lastDigits||null,
@@ -459,6 +460,7 @@ const toDbRow = {
     ir_percent: (t.irPercent===''||t.irPercent==null)?null:Number(t.irPercent),
     repasse_percent: (t.repassePercent===''||t.repassePercent==null)?null:Number(t.repassePercent),
     services: (t.services && t.services.length) ? t.services : null,
+    pix_key: t.pixKey || null,
   }),
   merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
 };
@@ -470,7 +472,7 @@ const fromDbRow = {
     installmentTotal:r.installment_total==null?'':r.installment_total,
     invoiceMonth:r.invoice_month||'', recurring:!!r.recurring, dueDate:r.due_date||'', notes:r.notes||'',
     taxPercent:r.tax_percent==null?'':r.tax_percent, repasseAmount:r.repasse_amount==null?'':r.repasse_amount,
-    createdAt: r.created_at || '', paidAt: r.paid_at || '',
+    createdAt: r.created_at || '', paidAt: r.paid_at || '', partnerRepasses: r.partner_repasses || [],
   }),
   cards: r => ({
     id:r.id, name:r.name, bank:r.bank||'', lastDigits:r.last_digits||'',
@@ -491,6 +493,7 @@ const fromDbRow = {
     irPercent: r.ir_percent==null?'':r.ir_percent,
     repassePercent: r.repasse_percent==null?'':r.repasse_percent,
     services: r.services || [],
+    pixKey: r.pix_key || '',
   }),
   merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
 };
@@ -1498,6 +1501,42 @@ function pageRecorrentes(){
     </div>`}
   `;
 }
+function openParceiraModal(id){
+  const tpl = id ? DB.templates.find(x=>x.id===id) : null;
+  const t = tpl ? {...tpl} : {id:null, type:'receita', title:'', category:'c-paciente', billingMode:'parceira', sessionRate:'', pixKey:'', paymentMethod:'pix', recurring:false, services:[], irPercent:'', repassePercent:''};
+  openModal(`
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-head"><h3>${t.id?'Editar':'Nova'} parceira</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Nome</label><input class="input full" id="f_pcName" value="${esc(t.title)}" placeholder="Ex: Dra. Foco, Dr. Silva..."></div>
+        <div class="field"><label>Valor do atendimento</label><input class="input full" id="f_pcRate" type="number" step="0.01" value="${t.sessionRate}" placeholder="Ex: 500,00"></div>
+        <div class="field"><label>Pix</label><input class="input full" id="f_pcPix" value="${esc(t.pixKey||'')}" placeholder="Chave Pix pra repasse"></div>
+      </div>
+      <div class="modal-foot">
+        ${t.id?`<button class="btn btn-danger-ghost" onclick="deleteTemplate('${t.id}')">Excluir</button>`:''}
+        <div style="flex:1"></div>
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveParceira('${t.id||''}')">Salvar</button>
+      </div>
+    </div>
+  `);
+}
+function saveParceira(id){
+  const nome = document.getElementById('f_pcName').value.trim();
+  const rate = parseFloat(document.getElementById('f_pcRate').value);
+  const pix = document.getElementById('f_pcPix').value.trim();
+  if(!nome){ toast('Informe o nome da parceira','danger'); return; }
+  if(!rate || rate<=0){ toast('Informe o valor do atendimento','danger'); return; }
+  const existing = id ? DB.templates.find(x=>x.id===id) : null;
+  const obj = {
+    id: id||uid(), type:'receita', title:nome, category:'c-paciente', billingMode:'parceira',
+    sessionRate:rate, pixKey:pix, paymentMethod: existing?existing.paymentMethod:'pix', cardId: existing?existing.cardId:'',
+    recurring:false, services:[], irPercent: existing?existing.irPercent:'', repassePercent: existing?existing.repassePercent:'', defaultAmount:'',
+  };
+  const idx = DB.templates.findIndex(x=>x.id===obj.id);
+  if(idx>=0) DB.templates[idx]=obj; else DB.templates.push(obj);
+  persist('templates').then(()=>{ closeModal(); toast('Parceira salva'); renderPage(); });
+}
 function openTemplateModal(id){
   const t = id ? DB.templates.find(x=>x.id===id) : null;
   state.editing = t ? {...t, services: (t.services||[]).map(s=>({...s}))} : {id:null, type:state.tplTab||'despesa', title:'', category:'', defaultAmount:'', paymentMethod:'pix', cardId:'', recurring:true, billingMode:'fixo', sessionRate:'', irPercent:'', repassePercent:'', services:[]};
@@ -1718,12 +1757,8 @@ function pageRepasses(){
   const periodo = state.repassesPeriodo || 'mes';
   const refMes = state.repassesMes || state.month;
   const refAno = state.repassesAno || refMes.getFullYear();
-  const parceiras = DB.templates.filter(t=>t.type==='receita' && (t.repassePercent!=='' && t.repassePercent!=null) && (t.billingMode==='atendimento' || t.billingMode==='multiplo'));
+  const parceiras = DB.templates.filter(t=>t.type==='receita' && (t.billingMode==='parceira' || ((t.billingMode==='atendimento'||t.billingMode==='multiplo') && t.repassePercent!=='' && t.repassePercent!=null)));
 
-  const calcTotalParceira = (tpl, mk)=>{
-    const rows = DB.tx.filter(x=>x.type==='receita' && x.amount>0 && txMonthKey(x)===mk && normalizeMerchant(x.description).includes(normalizeMerchant(tpl.title)));
-    return rows.reduce((s,x)=>s+ (Number(x.repasseAmount)||0), 0);
-  };
   let periodLabel, mesesParaSomar;
   if(periodo==='mes'){
     periodLabel = monthLabel(refMes);
@@ -1732,6 +1767,17 @@ function pageRepasses(){
     periodLabel = 'ano de '+refAno;
     mesesParaSomar = Array.from({length:12}, (_,i)=> refAno+'-'+String(i+1).padStart(2,'0'));
   }
+  const calcTotalParceira = (tpl)=>{
+    let total = 0;
+    DB.tx.filter(x=>x.type==='receita' && x.amount>0 && mesesParaSomar.includes(txMonthKey(x))).forEach(x=>{
+      if(x.partnerRepasses && x.partnerRepasses.length){
+        x.partnerRepasses.filter(pr=>pr.partnerId===tpl.id).forEach(pr=>{ total += Number(pr.total)||0; });
+      } else if(normalizeMerchant(x.description).includes(normalizeMerchant(tpl.title))){
+        total += Number(x.repasseAmount)||0; // fallback pra lancamentos antigos sem o detalhamento estruturado
+      }
+    });
+    return total;
+  };
 
   return `
     <div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
@@ -1749,15 +1795,15 @@ function pageRepasses(){
         <button onclick="state.repassesAno=(state.repassesAno||refAno)+1; renderPage();">›</button>
       </div>`}
       <div style="flex:1"></div>
-      <button class="btn btn-primary" onclick="openTemplateModal(null); setTimeout(()=>{ state.editing.type='receita'; state.editing.billingMode='multiplo'; renderTemplateModal(); },0);">+ Nova parceira</button>
+      <button class="btn btn-primary" onclick="openParceiraModal(null)">+ Nova parceira</button>
     </div>
 
     <div class="card card-pad" style="margin-bottom:16px;">
       <div class="section-title"><h3>Parceiras cadastradas</h3><span class="meta">${periodLabel}</span></div>
-      ${parceiras.length===0? emptyState('🤝','Nenhuma parceira cadastrada ainda','Cadastre em Recorrentes (ou pelo botão acima) uma receita do tipo "Por atendimento" ou "Múltiplos serviços" com repasse (%) definido — ela aparece aqui automaticamente.') : `
+      ${parceiras.length===0? emptyState('🤝','Nenhuma parceira cadastrada ainda','Clique em "+ Nova parceira" pra cadastrar nome, valor do atendimento e chave Pix.') : `
       <div style="display:flex; flex-direction:column; gap:10px;">
       ${parceiras.map(tpl=>{
-        const total = mesesParaSomar.reduce((s,mk)=>s+calcTotalParceira(tpl,mk), 0);
+        const total = calcTotalParceira(tpl);
         const rateInfo = tpl.billingMode==='multiplo'
           ? (tpl.services||[]).map(s=>`${esc(s.name)}: ${fmtBRL(s.rate)}`).join(' · ')
           : (tpl.sessionRate!=='' && tpl.sessionRate!=null ? fmtBRL(tpl.sessionRate)+'/atendimento' : 'valor variável por atendimento');
@@ -1765,7 +1811,7 @@ function pageRepasses(){
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div>
               <div style="font-weight:700; font-size:14px;">🤝 ${esc(tpl.title)}</div>
-              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${rateInfo} · repasse ${tpl.repassePercent}%${tpl.irPercent?' · IR '+tpl.irPercent+'%':''}</div>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${rateInfo}${tpl.pixKey?' · Pix: '+esc(tpl.pixKey):''}${tpl.repassePercent?' · repasse '+tpl.repassePercent+'%':''}</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Total de repasse — ${periodLabel}</div>
@@ -1773,7 +1819,7 @@ function pageRepasses(){
             </div>
           </div>
           <div style="margin-top:10px; display:flex; gap:8px;">
-            <button class="btn btn-sm btn-outline" onclick="openTemplateModal('${tpl.id}')">✎ Editar parceira</button>
+            <button class="btn btn-sm btn-outline" onclick="openParceiraModal('${tpl.id}')">✎ Editar parceira</button>
           </div>
         </div>`;
       }).join('')}
@@ -2320,6 +2366,7 @@ function openTxModal(id, presetType){
     if(defCard && !DB.cards.find(c=>c.id===defCard)) defCard='';
   }
   state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pendente', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
+  state.editingPartnerRows = (t && t.partnerRepasses && t.partnerRepasses.length) ? t.partnerRepasses.map(pr=>({partnerId:pr.partnerId, qty:pr.qty})) : [{partnerId:'', qty:1}];
   renderTxModal();
 }
 function renderTxModal(){
@@ -2347,7 +2394,7 @@ function renderTxModal(){
         ` : ''}
         <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..."></div>
         <div class="row2">
-          <div class="field"><label>Categoria</label><select class="select full" id="f_cat">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Valor (R$)</label><input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()"></div>
         </div>
         <div class="row2">
@@ -2374,12 +2421,14 @@ function renderTxModal(){
         <div class="field"><label class="checkline"><input type="checkbox" id="f_recurring" ${t.recurring?'checked':''}> Despesa/receita fixa (recorrente)</label></div>
         <div class="field"><label>Vencimento (opcional, para aparecer em "Próximos Vencimentos")</label><input class="input full" id="f_due" type="date" value="${t.dueDate||''}"></div>
         ${t.type==='receita'? `
-        <div class="hint-box">Se essa receita tem imposto retido ou repasse a sócio/parceiro, preencha abaixo para calcular o valor líquido.</div>
-        <div class="row2">
-          <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
-          <div class="field"><label>Repasse (R$)</label><input class="input full" id="f_repasse" type="number" step="0.01" value="${t.repasseAmount}" oninput="updateNetPreview()"></div>
-        </div>
-        <div class="net-preview" id="netPreview">Valor líquido: <b>${fmtBRL(netReceita(t))}</b></div>
+        <div class="hint-box">Se essa receita tem imposto retido, preencha abaixo para calcular o valor líquido.</div>
+        <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
+        ${t.category==='c-paciente' ? `
+        <div class="field" style="margin-top:6px;"><label>Parceiras neste atendimento</label></div>
+        <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
+        <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="addParceiraRow()">+ Adicionar outra parceira</button>
+        ` : ''}
+        <div class="net-preview" id="netPreview" style="margin-top:12px;">Valor líquido: <b>${fmtBRL(netReceita(t))}</b></div>
         ` : ''}
         <div class="field" style="margin-top:14px;"><label>Observações</label><textarea class="input full" id="f_notes" rows="2">${esc(t.notes||'')}</textarea></div>
       </div>
@@ -2568,12 +2617,56 @@ function applyTemplate(id){
   renderTxModal();
 }
 function toggleCardFields(){ document.getElementById('cardFields').style.display = document.getElementById('f_pm').value==='cartao'?'block':'none'; }
+function getParceiraTemplates(){ return DB.templates.filter(t=>t.type==='receita' && (t.billingMode==='parceira' || t.billingMode==='multiplo' || t.billingMode==='atendimento') && (t.sessionRate!=='' && t.sessionRate!=null)); }
+function renderParceiraRows(){
+  const rows = state.editingPartnerRows || [{partnerId:'', qty:1}];
+  const options = getParceiraTemplates();
+  return rows.map((r,i)=>{
+    const tpl = options.find(o=>o.id===r.partnerId);
+    const total = tpl ? Number(tpl.sessionRate)*r.qty : 0;
+    return `<div class="row3" style="align-items:end; margin-bottom:8px;">
+      <div class="field" style="margin-bottom:0;"><label>Parceira</label><select class="select full" onchange="state.editingPartnerRows[${i}].partnerId=this.value; updateNetPreview();">
+        <option value="">— selecione —</option>
+        ${options.map(o=>`<option value="${o.id}" ${r.partnerId===o.id?'selected':''}>${esc(o.title)} (${fmtBRL(o.sessionRate)})</option>`).join('')}
+      </select></div>
+      <div class="field" style="margin-bottom:0;"><label>Qtd. atendimentos</label><select class="select full" onchange="state.editingPartnerRows[${i}].qty=parseInt(this.value); updateNetPreview();">
+        ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${r.qty===n?'selected':''}>${n}</option>`).join('')}
+      </select></div>
+      <div class="field" style="margin-bottom:0; display:flex; gap:6px;">
+        <div style="flex:1;"><label>Total</label><div class="input full" style="background:var(--surface-2); display:flex; align-items:center; font-family:var(--mono);">${fmtBRL(total)}</div></div>
+        ${rows.length>1?`<button class="btn btn-sm btn-ghost" style="margin-top:18px;" onclick="removeParceiraRow(${i})">🗑</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+function addParceiraRow(){
+  state.editingPartnerRows = state.editingPartnerRows || [];
+  state.editingPartnerRows.push({partnerId:'', qty:1});
+  document.getElementById('parceiraRowsWrap').innerHTML = renderParceiraRows();
+  updateNetPreview();
+}
+function removeParceiraRow(i){
+  state.editingPartnerRows.splice(i,1);
+  document.getElementById('parceiraRowsWrap').innerHTML = renderParceiraRows();
+  updateNetPreview();
+}
+function computePartnerRepasses(){
+  const rows = state.editingPartnerRows || [];
+  const options = getParceiraTemplates();
+  return rows.filter(r=>r.partnerId).map(r=>{
+    const tpl = options.find(o=>o.id===r.partnerId);
+    const rate = tpl ? Number(tpl.sessionRate) : 0;
+    return {partnerId:r.partnerId, partnerName: tpl?tpl.title:'', qty:r.qty, rate, total: rate*r.qty};
+  });
+}
 function updateNetPreview(){
   const amt = parseFloat(document.getElementById('f_amount').value)||0;
   const tax = parseFloat(document.getElementById('f_tax')?.value)||0;
-  const rep = parseFloat(document.getElementById('f_repasse')?.value)||0;
+  const wrap = document.getElementById('parceiraRowsWrap');
+  if(wrap) wrap.innerHTML = renderParceiraRows();
+  const rep = wrap ? computePartnerRepasses().reduce((s,r)=>s+r.total,0) : 0;
   const net = Math.max(0, amt*(1-tax/100)-rep);
-  const el = document.getElementById('netPreview'); if(el) el.innerHTML = 'Valor líquido: <b>'+fmtBRL(net)+'</b>';
+  const el = document.getElementById('netPreview'); if(el) el.innerHTML = 'Valor líquido: <b>'+fmtBRL(net)+'</b>'+(rep>0?' <span style="color:var(--text-faint); font-weight:400;">(já descontando '+fmtBRL(rep)+' de repasse)</span>':'');
 }
 function saveTx(keepOpen){
   const desc = document.getElementById('f_desc').value.trim();
@@ -2599,7 +2692,9 @@ function saveTx(keepOpen){
   };
   if(t.type==='receita'){
     obj.taxPercent = parseFloat(document.getElementById('f_tax').value)||0;
-    obj.repasseAmount = parseFloat(document.getElementById('f_repasse').value)||0;
+    const partnerRepasses = (obj.category==='c-paciente') ? computePartnerRepasses() : [];
+    obj.partnerRepasses = partnerRepasses;
+    obj.repasseAmount = partnerRepasses.reduce((s,r)=>s+r.total,0);
   }
   const idx = DB.tx.findIndex(x=>x.id===obj.id);
   const wasEditingExisting = !!t.id;
