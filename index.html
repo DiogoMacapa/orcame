@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-parceiras-em-transacao';
+const APP_VERSION = '2026.07.24-fix-filtro-parceiras';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -1757,7 +1757,7 @@ function pageRepasses(){
   const periodo = state.repassesPeriodo || 'mes';
   const refMes = state.repassesMes || state.month;
   const refAno = state.repassesAno || refMes.getFullYear();
-  const parceiras = DB.templates.filter(t=>t.type==='receita' && (t.billingMode==='parceira' || ((t.billingMode==='atendimento'||t.billingMode==='multiplo') && t.repassePercent!=='' && t.repassePercent!=null)));
+  const parceiras = DB.templates.filter(t=>t.type==='receita' && t.billingMode==='parceira');
 
   let periodLabel, mesesParaSomar;
   if(periodo==='mes'){
@@ -1820,6 +1820,7 @@ function pageRepasses(){
           </div>
           <div style="margin-top:10px; display:flex; gap:8px;">
             <button class="btn btn-sm btn-outline" onclick="openParceiraModal('${tpl.id}')">✎ Editar parceira</button>
+            <button class="btn btn-sm btn-danger-ghost" onclick="deleteTemplate('${tpl.id}')">🗑 Excluir</button>
           </div>
         </div>`;
       }).join('')}
@@ -2617,7 +2618,7 @@ function applyTemplate(id){
   renderTxModal();
 }
 function toggleCardFields(){ document.getElementById('cardFields').style.display = document.getElementById('f_pm').value==='cartao'?'block':'none'; }
-function getParceiraTemplates(){ return DB.templates.filter(t=>t.type==='receita' && (t.billingMode==='parceira' || t.billingMode==='multiplo' || t.billingMode==='atendimento') && (t.sessionRate!=='' && t.sessionRate!=null)); }
+function getParceiraTemplates(){ return DB.templates.filter(t=>t.type==='receita' && t.billingMode==='parceira' && (t.sessionRate!=='' && t.sessionRate!=null)); }
 function renderParceiraRows(){
   const rows = state.editingPartnerRows || [{partnerId:'', qty:1}];
   const options = getParceiraTemplates();
