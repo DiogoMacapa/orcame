@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-baixa-saques';
+const APP_VERSION = '2026.07.24-baixa-mais-apagada';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1879,17 +1879,17 @@ function pageConferenciaRepasses(){
             <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Status</th>
           </tr></thead>
           <tbody>
-          ${rows.map(r=>`<tr style="${r.baixa?'opacity:.55;':''}">
+          ${rows.map(r=>`<tr style="${r.baixa?'opacity:.4;':''}">
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); font-weight:600;">${esc(r.nome)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono);">${fmtBRL(r.bruto)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--text-muted);">${r.irPct.toFixed(1)}%</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--danger);">${fmtBRL(r.irReais)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:${r.baixa?'var(--text-muted)':'var(--danger)'};">${fmtBRL(r.irReais)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700;">${fmtBRL(r.sacar)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--info);">${fmtBRL(r.repasse)}</td>
-            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(r.liquido)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:${r.baixa?'var(--text-muted)':'var(--info)'};">${fmtBRL(r.repasse)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700; color:${r.baixa?'var(--text-muted)':'var(--primary-dark)'};">${fmtBRL(r.liquido)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right;">
               ${r.baixa
-                ? `<span style="font-size:11px; color:var(--primary-dark); font-weight:600;">✅ Sacado</span> <button class="btn btn-sm btn-ghost" onclick="desfazerBaixaSaque('${r.baixa.id}')" title="Desfazer">↺</button>`
+                ? `<span style="font-size:11px; color:var(--text-faint); font-weight:600;">✅ Sacado</span> <button class="btn btn-sm btn-ghost" onclick="desfazerBaixaSaque('${r.baixa.id}')" title="Desfazer">↺</button>`
                 : `<button class="btn btn-sm btn-primary" onclick="darBaixaSaque('${esc(r.nome).replace(/'/g,"\\'")}','${confMk}')">✓ Dar baixa</button>`}
             </td>
           </tr>`).join('')}
