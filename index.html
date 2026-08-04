@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-remove-campo-pix';
+const APP_VERSION = '2026.07.24-qtd-atendimentos-paciente';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -2364,6 +2364,8 @@ function openTxModal(id, presetType){
   }
   state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pendente', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
   state.editingPartnerRows = (t && t.partnerRepasses && t.partnerRepasses.length) ? t.partnerRepasses.map(pr=>({partnerId:pr.partnerId, qty:pr.qty})) : [{partnerId:'', qty:1}];
+  state.editingPacienteTplId = '';
+  state.editingPacienteQtd = 1;
   renderTxModal();
 }
 function renderTxModal(){
@@ -2421,6 +2423,15 @@ function renderTxModal(){
         <div class="hint-box">Se essa receita tem imposto retido, preencha abaixo para calcular o valor líquido.</div>
         <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
         ${t.category==='c-paciente' ? `
+        <div class="row2">
+          <div class="field"><label>Paciente (recorrente cadastrado)</label><select class="select full" id="f_pacienteTpl" onchange="applyPacienteQtd()">
+            <option value="">— nenhum / valor manual —</option>
+            ${getPacienteTemplates().map(pt=>`<option value="${pt.id}" ${state.editingPacienteTplId===pt.id?'selected':''}>${esc(pt.title)} (${fmtBRL(pt.sessionRate)}/atend.)</option>`).join('')}
+          </select></div>
+          <div class="field"><label>Quantidade de atendimentos</label><select class="select full" id="f_pacienteQtd" onchange="applyPacienteQtd()">
+            ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${(state.editingPacienteQtd||1)===n?'selected':''}>${n}</option>`).join('')}
+          </select></div>
+        </div>
         <div class="field" style="margin-top:6px;"><label>Parceiras neste atendimento</label></div>
         <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
         <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="addParceiraRow()">+ Adicionar outra parceira</button>
@@ -2615,6 +2626,22 @@ function applyTemplate(id){
 }
 function toggleCardFields(){ document.getElementById('cardFields').style.display = document.getElementById('f_pm').value==='cartao'?'block':'none'; }
 function getParceiraTemplates(){ return DB.templates.filter(t=>t.type==='receita' && t.billingMode==='parceira' && (t.sessionRate!=='' && t.sessionRate!=null)); }
+function getPacienteTemplates(){ return DB.templates.filter(t=>t.type==='receita' && t.category==='c-paciente' && t.billingMode==='atendimento' && (t.sessionRate!=='' && t.sessionRate!=null)); }
+function applyPacienteQtd(){
+  const tplId = document.getElementById('f_pacienteTpl').value;
+  const qtd = parseInt(document.getElementById('f_pacienteQtd').value)||1;
+  state.editingPacienteTplId = tplId;
+  state.editingPacienteQtd = qtd;
+  if(tplId){
+    const tpl = DB.templates.find(x=>x.id===tplId);
+    if(tpl){
+      document.getElementById('f_amount').value = (Number(tpl.sessionRate)*qtd).toFixed(2);
+      const descEl = document.getElementById('f_desc');
+      if(descEl && !descEl.value.trim()) descEl.value = tpl.title;
+    }
+  }
+  updateNetPreview();
+}
 function renderParceiraRows(){
   const rows = state.editingPartnerRows || [{partnerId:'', qty:1}];
   const options = getParceiraTemplates();
