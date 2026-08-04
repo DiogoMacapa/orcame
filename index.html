@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-qtd-atendimentos-paciente';
+const APP_VERSION = '2026.07.24-form-atendimento-dedicado';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -2364,9 +2364,88 @@ function openTxModal(id, presetType){
   }
   state.editing = t ? {...t} : {id:null, type, date:new Date().toISOString().slice(0,10), description:'', category:'', paymentMethod:defPm, cardId:defCard, installmentCurrent:'', installmentTotal:'', recurring:false, status:'pendente', amount:'', taxPercent:'', repasseAmount:'', dueDate:'', notes:''};
   state.editingPartnerRows = (t && t.partnerRepasses && t.partnerRepasses.length) ? t.partnerRepasses.map(pr=>({partnerId:pr.partnerId, qty:pr.qty})) : [{partnerId:'', qty:1}];
-  state.editingPacienteTplId = '';
+  const matchedPacienteTpl = t ? getPacienteTemplates().find(p=>p.title===t.description) : null;
+  state.editingPacienteTplId = matchedPacienteTpl ? matchedPacienteTpl.id : '';
   state.editingPacienteQtd = 1;
+  state.editingPacienteAvulso = !!(t && t.category==='c-paciente' && !matchedPacienteTpl);
   renderTxModal();
+}
+function renderGenericTxFields(t, cats){
+  return `
+    <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..."></div>
+    <div class="row2">
+      <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Valor (R$)</label><input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Data</label><input class="input full" id="f_date" type="date" value="${t.date}"></div>
+      <div class="field"><label>Status</label><select class="select full" id="f_status">
+        <option value="pago" ${t.status==='pago'?'selected':''}>${t.type==='receita'?'Recebido':'Pago'}</option>
+        <option value="pendente" ${t.status==='pendente'?'selected':''}>Pendente</option>
+      </select></div>
+    </div>
+    <div class="field"><label>Forma de pagamento</label><select class="select full" id="f_pm" onchange="toggleCardFields()">
+      <option value="pix" ${t.paymentMethod==='pix'?'selected':''}>Pix</option>
+      <option value="cartao" ${t.paymentMethod==='cartao'?'selected':''}>Cartão de crédito</option>
+      <option value="dinheiro" ${t.paymentMethod==='dinheiro'?'selected':''}>Dinheiro</option>
+      <option value="transferencia" ${t.paymentMethod==='transferencia'?'selected':''}>Transferência</option>
+    </select></div>
+    <div id="cardFields" style="display:${t.paymentMethod==='cartao'?'block':'none'}">
+      <div class="row3">
+        <div class="field" style="grid-column:span 1"><label>Cartão</label><select class="select full" id="f_card">${DB.cards.map(c=>`<option value="${c.id}" ${t.cardId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Parcela atual</label><input class="input full" id="f_installCur" type="number" min="1" value="${t.installmentCurrent}"></div>
+        <div class="field"><label>Total de parcelas</label><input class="input full" id="f_installTot" type="number" min="1" value="${t.installmentTotal}"></div>
+      </div>
+      <div class="field"><label>Mês da fatura (pode ser diferente da data da compra)</label><input class="input full" id="f_invoiceMonth" type="month" value="${t.invoiceMonth||t.date.slice(0,7)}"></div>
+    </div>
+    <div class="field"><label class="checkline"><input type="checkbox" id="f_recurring" ${t.recurring?'checked':''}> Despesa/receita fixa (recorrente)</label></div>
+    <div class="field"><label>Vencimento (opcional, para aparecer em "Próximos Vencimentos")</label><input class="input full" id="f_due" type="date" value="${t.dueDate||''}"></div>
+    ${t.type==='receita'? `
+    <div class="hint-box">Se essa receita tem imposto retido, preencha abaixo para calcular o valor líquido.</div>
+    <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
+    <div class="net-preview" id="netPreview" style="margin-top:12px;">Valor líquido: <b>${fmtBRL(netReceita(t))}</b></div>
+    ` : ''}
+  `;
+}
+function renderAtendimentoFields(t, cats){
+  const isAvulso = state.editingPacienteAvulso || (!state.editingPacienteTplId && t.description && !getPacienteTemplates().find(p=>p.title===t.description));
+  const bruto = parseFloat(t.amount)||0;
+  return `
+    <div class="row2">
+      <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Status</label><select class="select full" id="f_status">
+        <option value="pago" ${t.status==='pago'?'selected':''}>Recebido</option>
+        <option value="pendente" ${t.status==='pendente'?'selected':''}>Pendente</option>
+      </select></div>
+    </div>
+    <div class="field"><label>Descrição (paciente)</label><select class="select full" id="f_pacienteTpl" onchange="applyPacienteQtd()">
+      <option value="">— selecione —</option>
+      ${getPacienteTemplates().map(pt=>`<option value="${pt.id}" ${state.editingPacienteTplId===pt.id?'selected':''}>${esc(pt.title)} (${fmtBRL(pt.sessionRate)}/atend.)</option>`).join('')}
+      <option value="__avulso__" ${isAvulso?'selected':''}>➕ Paciente avulso (digitar nome)</option>
+    </select></div>
+    ${isAvulso ? `<div class="field"><label>Nome do paciente avulso</label><input class="input full" id="f_pacienteAvulsoNome" value="${esc(t.description)}" placeholder="Digite o nome" oninput="document.getElementById('f_desc').value=this.value;"></div>` : ''}
+    <input type="hidden" id="f_desc" value="${esc(t.description)}">
+    <div class="row2">
+      <div class="field"><label>Quantidade de atendimentos</label><select class="select full" id="f_pacienteQtd" onchange="applyPacienteQtd()">
+        ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${(state.editingPacienteQtd||1)===n?'selected':''}>${n}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Valor Bruto (R$)</label>${isAvulso
+        ? `<input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()">`
+        : `<div class="input full" style="background:var(--surface-2); display:flex; align-items:center; font-family:var(--mono); font-weight:700;">${fmtBRL(bruto)}</div><input type="hidden" id="f_amount" value="${t.amount}">`}
+      </div>
+    </div>
+    <div class="field" style="margin-top:6px;"><label>Parceiras neste atendimento</label></div>
+    <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
+    <button class="btn btn-sm btn-outline" style="margin-top:6px; margin-bottom:14px;" onclick="addParceiraRow()">+ Adicionar parceira</button>
+    <div class="row2">
+      <div class="field"><label>IR (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
+      <div class="field"><label>Valor Líquido</label><div class="input full" id="netPreviewBox" style="background:var(--surface-2); display:flex; align-items:center; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(netReceita(t))}</div></div>
+    </div>
+    <input type="hidden" id="f_date" value="${t.date}">
+    <input type="hidden" id="f_pm" value="${t.paymentMethod||'pix'}">
+    <input type="hidden" id="f_due" value="${t.dueDate||''}">
+    <input type="checkbox" id="f_recurring" style="display:none;" ${t.recurring?'checked':''}>
+  `;
 }
 function renderTxModal(){
   const t = state.editing;
@@ -2379,65 +2458,19 @@ function renderTxModal(){
           <button class="${t.type==='despesa'?'on':''}" onclick="switchTxType('despesa')">↘ Despesa</button>
           <button class="${t.type==='receita'?'on':''}" onclick="switchTxType('receita')">↗ Receita</button>
         </div></div>
-        ${(!t.id && DB.templates.filter(x=>x.type===t.type).length>0) ? `
+        ${(!t.id && DB.templates.filter(x=>x.type===t.type).length>0 && t.category!=='c-paciente') ? `
         <div class="field"><label>Lançamento rápido (opcional)</label><select class="select full" id="f_quickTpl" onchange="applyTemplate(this.value)">
           <option value="">— escolher da lista de recorrentes —</option>
           ${DB.templates.filter(x=>x.type===t.type).map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
         </select></div>
         ` : ''}
-        ${(!t.id && t.type==='receita' && DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).length>0) ? `
+        ${(!t.id && t.type==='receita' && t.category!=='c-paciente' && DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).length>0) ? `
         <div class="field"><label>Ou calcular como atendimento avulso (nome digitado na hora)</label><select class="select full" id="f_avulsoTpl" onchange="if(this.value) openAvulsoAtendimento(this.value);">
           <option value="">— usar as regras de um modelo (ex: Foco) com outro nome —</option>
           ${DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
         </select></div>
         ` : ''}
-        <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..."></div>
-        <div class="row2">
-          <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
-          <div class="field"><label>Valor (R$)</label><input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()"></div>
-        </div>
-        <div class="row2">
-          <div class="field"><label>Data</label><input class="input full" id="f_date" type="date" value="${t.date}"></div>
-          <div class="field"><label>Status</label><select class="select full" id="f_status">
-            <option value="pago" ${t.status==='pago'?'selected':''}>${t.type==='receita'?'Recebido':'Pago'}</option>
-            <option value="pendente" ${t.status==='pendente'?'selected':''}>Pendente</option>
-          </select></div>
-        </div>
-        <div class="field"><label>Forma de pagamento</label><select class="select full" id="f_pm" onchange="toggleCardFields()">
-          <option value="pix" ${t.paymentMethod==='pix'?'selected':''}>Pix</option>
-          <option value="cartao" ${t.paymentMethod==='cartao'?'selected':''}>Cartão de crédito</option>
-          <option value="dinheiro" ${t.paymentMethod==='dinheiro'?'selected':''}>Dinheiro</option>
-          <option value="transferencia" ${t.paymentMethod==='transferencia'?'selected':''}>Transferência</option>
-        </select></div>
-        <div id="cardFields" style="display:${t.paymentMethod==='cartao'?'block':'none'}">
-          <div class="row3">
-            <div class="field" style="grid-column:span 1"><label>Cartão</label><select class="select full" id="f_card">${DB.cards.map(c=>`<option value="${c.id}" ${t.cardId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
-            <div class="field"><label>Parcela atual</label><input class="input full" id="f_installCur" type="number" min="1" value="${t.installmentCurrent}"></div>
-            <div class="field"><label>Total de parcelas</label><input class="input full" id="f_installTot" type="number" min="1" value="${t.installmentTotal}"></div>
-          </div>
-          <div class="field"><label>Mês da fatura (pode ser diferente da data da compra)</label><input class="input full" id="f_invoiceMonth" type="month" value="${t.invoiceMonth||t.date.slice(0,7)}"></div>
-        </div>
-        <div class="field"><label class="checkline"><input type="checkbox" id="f_recurring" ${t.recurring?'checked':''}> Despesa/receita fixa (recorrente)</label></div>
-        <div class="field"><label>Vencimento (opcional, para aparecer em "Próximos Vencimentos")</label><input class="input full" id="f_due" type="date" value="${t.dueDate||''}"></div>
-        ${t.type==='receita'? `
-        <div class="hint-box">Se essa receita tem imposto retido, preencha abaixo para calcular o valor líquido.</div>
-        <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
-        ${t.category==='c-paciente' ? `
-        <div class="row2">
-          <div class="field"><label>Paciente (recorrente cadastrado)</label><select class="select full" id="f_pacienteTpl" onchange="applyPacienteQtd()">
-            <option value="">— nenhum / valor manual —</option>
-            ${getPacienteTemplates().map(pt=>`<option value="${pt.id}" ${state.editingPacienteTplId===pt.id?'selected':''}>${esc(pt.title)} (${fmtBRL(pt.sessionRate)}/atend.)</option>`).join('')}
-          </select></div>
-          <div class="field"><label>Quantidade de atendimentos</label><select class="select full" id="f_pacienteQtd" onchange="applyPacienteQtd()">
-            ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${(state.editingPacienteQtd||1)===n?'selected':''}>${n}</option>`).join('')}
-          </select></div>
-        </div>
-        <div class="field" style="margin-top:6px;"><label>Parceiras neste atendimento</label></div>
-        <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
-        <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="addParceiraRow()">+ Adicionar outra parceira</button>
-        ` : ''}
-        <div class="net-preview" id="netPreview" style="margin-top:12px;">Valor líquido: <b>${fmtBRL(netReceita(t))}</b></div>
-        ` : ''}
+        ${(t.type==='receita' && t.category==='c-paciente') ? renderAtendimentoFields(t, cats) : renderGenericTxFields(t, cats)}
         <div class="field" style="margin-top:14px;"><label>Observações</label><textarea class="input full" id="f_notes" rows="2">${esc(t.notes||'')}</textarea></div>
       </div>
       <div class="modal-foot">
@@ -2630,15 +2663,26 @@ function getPacienteTemplates(){ return DB.templates.filter(t=>t.type==='receita
 function applyPacienteQtd(){
   const tplId = document.getElementById('f_pacienteTpl').value;
   const qtd = parseInt(document.getElementById('f_pacienteQtd').value)||1;
-  state.editingPacienteTplId = tplId;
   state.editingPacienteQtd = qtd;
+  if(tplId==='__avulso__'){
+    state.editingPacienteAvulso = true;
+    state.editingPacienteTplId = '';
+    state.editing.description = document.getElementById('f_desc').value || '';
+    renderTxModal();
+    return;
+  }
+  state.editingPacienteAvulso = false;
+  state.editingPacienteTplId = tplId;
   if(tplId){
     const tpl = DB.templates.find(x=>x.id===tplId);
     if(tpl){
-      document.getElementById('f_amount').value = (Number(tpl.sessionRate)*qtd).toFixed(2);
-      const descEl = document.getElementById('f_desc');
-      if(descEl && !descEl.value.trim()) descEl.value = tpl.title;
+      state.editing.description = tpl.title;
+      state.editing.amount = (Number(tpl.sessionRate)*qtd).toFixed(2);
+      renderTxModal();
+      return;
     }
+  } else {
+    state.editing.description = '';
   }
   updateNetPreview();
 }
@@ -2690,7 +2734,10 @@ function updateNetPreview(){
   if(wrap) wrap.innerHTML = renderParceiraRows();
   const rep = wrap ? computePartnerRepasses().reduce((s,r)=>s+r.total,0) : 0;
   const net = Math.max(0, amt*(1-tax/100)-rep);
-  const el = document.getElementById('netPreview'); if(el) el.innerHTML = 'Valor líquido: <b>'+fmtBRL(net)+'</b>'+(rep>0?' <span style="color:var(--text-faint); font-weight:400;">(já descontando '+fmtBRL(rep)+' de repasse)</span>':'');
+  const el = document.getElementById('netPreview');
+  if(el) el.innerHTML = 'Valor líquido: <b>'+fmtBRL(net)+'</b>'+(rep>0?' <span style="color:var(--text-faint); font-weight:400;">(já descontando '+fmtBRL(rep)+' de repasse)</span>':'');
+  const box = document.getElementById('netPreviewBox');
+  if(box) box.textContent = fmtBRL(net);
 }
 function saveTx(keepOpen){
   const desc = document.getElementById('f_desc').value.trim();
