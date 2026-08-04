@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-fix-status-conexao';
+const APP_VERSION = '2026.07.24-mostra-erro-real';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -530,7 +530,8 @@ async function loadAll(){
     usingFallbackStorage = true;
     window._lastSupaError = (txFailed.error && txFailed.error.message) || String(txFailed.error);
   } else if(failedTables.length>0){
-    window._lastSupaError = 'Tabela(s) faltando no banco: '+failedTables.map(f=>TABLE_MAP[f.key]).join(', ')+' — rode o SQL de configuração correspondente no Supabase.';
+    const detalhes = failedTables.map(f=> TABLE_MAP[f.key]+': '+((f.error && f.error.message) || String(f.error))).join(' | ');
+    window._lastSupaError = 'Erro ao carregar tabela(s): '+detalhes;
     window._partialSupaError = true;
   }
   // migracao unica: se supabase estava totalmente vazio mas existe dado local antigo, sobe pro supabase
