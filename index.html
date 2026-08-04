@@ -279,14 +279,12 @@ a{color:inherit;}
 @media(max-width:880px){
   .topnav-main{padding:10px 14px; flex-wrap:wrap;}
   .topnav-main .searchbox{order:3; max-width:none; width:100%; margin-top:6px;}
-  .topnav-main .shortcuts-hint{display:none;}
   .topnav-strip{padding:0 10px 10px;}
   .build-tag{display:none;}
   .brand-text span{display:none;}
   .topbar{ flex-wrap:wrap; gap:8px; padding:10px 14px; }
   .topbar .searchbox{ order:1; max-width:none; width:100%; }
   .topbar > div[style*="flex:1"]{ display:none; }
-  .topbar > div[title="Atalhos de teclado"]{ display:none; }
   .content{padding:16px 12px 60px;}
   .grid.g4{grid-template-columns:1fr 1fr; gap:10px;}
   .grid.g3{grid-template-columns:1fr;}
@@ -346,7 +344,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-mostra-erro-real';
+const APP_VERSION = '2026.07.24-remove-atalhos-teclado';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -861,11 +859,6 @@ function render(){
         </div>
         <div class="searchbox">🔎<input id="globalSearch" placeholder="Buscar transações, cartões..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
         <div style="flex:1"></div>
-        <div class="shortcuts-hint" style="font-size:11px; color:var(--text-faint); margin-right:6px; display:flex; gap:10px;" title="Atalhos de teclado">
-          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">N</kbd> despesa</span>
-          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">R</kbd> receita</span>
-          <span><kbd style="background:var(--surface-2); padding:2px 5px; border-radius:4px; font-family:var(--mono);">/</kbd> buscar</span>
-        </div>
         <span class="icon-btn" title="${supa && !usingFallbackStorage ? 'Conectado ao Supabase' : 'Salvando localmente neste navegador'}" style="cursor:default; font-size:14px;">${supa && !usingFallbackStorage ? '🟢' : '🟡'}</span>
         <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
         <button class="icon-btn" title="Baixar backup" onclick="exportBackup()">⬇️</button>
@@ -3339,18 +3332,11 @@ function confirmImport(){
 
 /* ============================ INIT ============================ */
 document.addEventListener('keydown', function(e){
-  const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
-  const typing = tag==='input' || tag==='textarea' || tag==='select';
   if(e.key==='Escape'){
     const confirmRoot = document.getElementById('confirmRoot'); if(confirmRoot){ confirmRoot.remove(); return; }
     const modalRoot = document.getElementById('modalRoot'); if(modalRoot){ closeModal(); return; }
     const alertsPanel = document.getElementById('alertsPanel'); if(alertsPanel){ alertsPanel.remove(); return; }
-    return;
   }
-  if(typing || document.getElementById('modalRoot')) return;
-  if(e.key==='n' || e.key==='N'){ e.preventDefault(); openTxModal(null,'despesa'); }
-  else if(e.key==='r' || e.key==='R'){ e.preventDefault(); openTxModal(null,'receita'); }
-  else if(e.key==='/'){ e.preventDefault(); const s=document.getElementById('globalSearch'); if(s) s.focus(); }
 });
 (async function init(){
   try{
