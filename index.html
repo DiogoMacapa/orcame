@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-baixa-mais-apagada';
+const APP_VERSION = '2026.07.24-fix-status-conexao';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -509,6 +509,7 @@ async function loadAll(){
       return {key, ok:false, error:e};
     }
   }));
+  const failedTables = [];
   results.forEach(({key, ok, data, error})=>{
     if(ok){
       DB[key] = (data||[]).map(fromDbRow[key]);
@@ -518,11 +519,20 @@ async function loadAll(){
       DB[key].map(toDbRow[key]).forEach(r=>_persistSnapshot[key].set(String(r.id), JSON.stringify(r)));
     } else {
       console.error('Falha ao carregar '+key+' do Supabase:', error);
-      window._lastSupaError = (error && error.message) || String(error);
-      usingFallbackStorage = true;
+      failedTables.push({key, error});
       try{ const raw = localStorage.getItem('orcame:'+key); DB[key] = raw?JSON.parse(raw):[]; }catch(_){ DB[key]=[]; }
     }
   });
+  // o indicador de conexao reflete a tabela principal (transacoes) - uma tabela secundaria faltando nao deve
+  // fazer o app inteiro parecer "desconectado" quando o essencial esta funcionando
+  const txFailed = failedTables.find(f=>f.key==='tx');
+  if(txFailed){
+    usingFallbackStorage = true;
+    window._lastSupaError = (txFailed.error && txFailed.error.message) || String(txFailed.error);
+  } else if(failedTables.length>0){
+    window._lastSupaError = 'Tabela(s) faltando no banco: '+failedTables.map(f=>TABLE_MAP[f.key]).join(', ')+' — rode o SQL de configuração correspondente no Supabase.';
+    window._partialSupaError = true;
+  }
   // migracao unica: se supabase estava totalmente vazio mas existe dado local antigo, sobe pro supabase
   if(supa && allEmpty && !usingFallbackStorage){
     for(const key of Object.keys(TABLE_MAP)){
@@ -3351,6 +3361,8 @@ document.addEventListener('keydown', function(e){
     render();
     if(usingFallbackStorage){
       setTimeout(()=>toast('Armazenamento na nuvem indisponível — seus dados estão sendo salvos apenas neste navegador.'), 400);
+    } else if(window._partialSupaError){
+      setTimeout(()=>toast(window._lastSupaError, 'danger'), 400);
     }
     setTimeout(()=>checkAutoBackup(), 1200);
     setTimeout(()=>showStartupAlertsPopup(), 700);
