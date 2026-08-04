@@ -346,8 +346,8 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-fix-qtd-e-toast';
-let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
+const APP_VERSION = '2026.07.24-baixa-saques';
+let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
     const saved = localStorage.getItem('orcame:lastPage');
@@ -373,7 +373,7 @@ let state = {
 /* ---- Supabase config (fetch direto na API REST, sem depender de CDN externo) ---- */
 const SUPABASE_REST_URL = 'https://alrpnvctcooernsdddax.supabase.co/rest/v1';
 const SUPABASE_ANON_KEY = 'sb_publishable_kszH2B5zQuSOHUZTxSTNHw_Vit34hNT';
-const TABLE_MAP = { tx:'transactions', cards:'cards', cats:'categories', goals:'goals', templates:'templates', merchantRules:'merchant_rules' };
+const TABLE_MAP = { tx:'transactions', cards:'cards', cats:'categories', goals:'goals', templates:'templates', merchantRules:'merchant_rules', saqueBaixas:'saque_baixas' };
 let supa = false; // true quando a conexão com o Supabase foi confirmada funcionando
 let usingFallbackStorage = false;
 
@@ -462,6 +462,7 @@ const toDbRow = {
     services: (t.services && t.services.length) ? t.services : null,
   }),
   merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
+  saqueBaixas: s => ({ id:s.id, paciente:s.paciente, mes:s.mes }),
 };
 const fromDbRow = {
   tx: r => ({
@@ -494,6 +495,7 @@ const fromDbRow = {
     services: r.services || [],
   }),
   merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
+  saqueBaixas: r => ({ id:r.id, paciente:r.paciente, mes:r.mes, dataBaixa:r.data_baixa||'' }),
 };
 
 async function loadAll(){
@@ -1853,11 +1855,19 @@ function pageConferenciaRepasses(){
           const sacar = v.bruto - v.irReais;
           const liquido = sacar - v.repasse;
           const irPct = v.bruto>0 ? (v.irReais/v.bruto*100) : 0;
-          return {nome, bruto:v.bruto, irPct, irReais:v.irReais, sacar, repasse:v.repasse, liquido};
-        }).sort((a,b)=>b.bruto-a.bruto);
+          const baixa = DB.saqueBaixas.find(b=>b.mes===confMk && normalizeMerchant(b.paciente)===normalizeMerchant(nome));
+          return {nome, bruto:v.bruto, irPct, irReais:v.irReais, sacar, repasse:v.repasse, liquido, baixa};
+        }).sort((a,b)=> (!!a.baixa - !!b.baixa) || (b.bruto-a.bruto));
         if(rows.length===0) return emptyState('🧾','Nenhuma receita neste mês',' ');
         const totals = rows.reduce((s,r)=>({bruto:s.bruto+r.bruto, irReais:s.irReais+r.irReais, sacar:s.sacar+r.sacar, repasse:s.repasse+r.repasse, liquido:s.liquido+r.liquido}), {bruto:0,irReais:0,sacar:0,repasse:0,liquido:0});
-        return `<table style="width:100%; border-collapse:collapse;">
+        const pendentes = rows.filter(r=>!r.baixa);
+        const jaSacado = rows.filter(r=>r.baixa);
+        return `
+        <div style="display:flex; gap:24px; margin-bottom:16px; flex-wrap:wrap;">
+          <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Ainda a sacar</div><div style="font-family:var(--mono); font-size:18px; font-weight:700; color:var(--warning);">${fmtBRL(pendentes.reduce((s,r)=>s+r.sacar,0))}</div></div>
+          <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Já sacado</div><div style="font-family:var(--mono); font-size:18px; font-weight:700; color:var(--primary-dark);">${fmtBRL(jaSacado.reduce((s,r)=>s+r.sacar,0))}</div></div>
+        </div>
+        <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="text-align:left; font-size:11px; color:var(--text-faint); text-transform:uppercase;">
             <th style="padding:6px 8px; border-bottom:1px solid var(--border)">Paciente</th>
             <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Valor Bruto</th>
@@ -1866,9 +1876,10 @@ function pageConferenciaRepasses(){
             <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Sacar</th>
             <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Repasse</th>
             <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Lucro Líquido</th>
+            <th style="padding:6px 8px; border-bottom:1px solid var(--border); text-align:right;">Status</th>
           </tr></thead>
           <tbody>
-          ${rows.map(r=>`<tr>
+          ${rows.map(r=>`<tr style="${r.baixa?'opacity:.55;':''}">
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); font-weight:600;">${esc(r.nome)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono);">${fmtBRL(r.bruto)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--text-muted);">${r.irPct.toFixed(1)}%</td>
@@ -1876,6 +1887,11 @@ function pageConferenciaRepasses(){
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700;">${fmtBRL(r.sacar)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); color:var(--info);">${fmtBRL(r.repasse)}</td>
             <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(r.liquido)}</td>
+            <td style="padding:9px 8px; border-bottom:1px solid var(--surface-2); text-align:right;">
+              ${r.baixa
+                ? `<span style="font-size:11px; color:var(--primary-dark); font-weight:600;">✅ Sacado</span> <button class="btn btn-sm btn-ghost" onclick="desfazerBaixaSaque('${r.baixa.id}')" title="Desfazer">↺</button>`
+                : `<button class="btn btn-sm btn-primary" onclick="darBaixaSaque('${esc(r.nome).replace(/'/g,"\\'")}','${confMk}')">✓ Dar baixa</button>`}
+            </td>
           </tr>`).join('')}
           <tr>
             <td style="padding:10px 8px; font-weight:800;">Total</td>
@@ -1885,12 +1901,22 @@ function pageConferenciaRepasses(){
             <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800;">${fmtBRL(totals.sacar)}</td>
             <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--info);">${fmtBRL(totals.repasse)}</td>
             <td style="padding:10px 8px; text-align:right; font-family:var(--mono); font-weight:800; color:var(--primary-dark);">${fmtBRL(totals.liquido)}</td>
+            <td></td>
           </tr>
           </tbody>
         </table>`;
       })()}
     </div>
   `;
+}
+function darBaixaSaque(nome, mes){
+  const obj = {id:uid(), paciente:nome, mes, dataBaixa:new Date().toISOString()};
+  DB.saqueBaixas.push(obj);
+  persist('saqueBaixas').then(()=>{ toast('Baixa registrada: '+nome); renderPage(); });
+}
+function desfazerBaixaSaque(id){
+  DB.saqueBaixas = DB.saqueBaixas.filter(b=>b.id!==id);
+  persist('saqueBaixas').then(()=>{ toast('Baixa desfeita'); renderPage(); });
 }
 function pageRelatorios(){
   if((state.relatoriosTab||'geral')==='conferencia') return pageRelatoriosWrapper(pageConferenciaRepasses());
