@@ -346,7 +346,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-fix-filtro-parceiras';
+const APP_VERSION = '2026.07.24-remove-campo-pix';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[] };
 function _getInitialPage(){
   try{
@@ -460,7 +460,6 @@ const toDbRow = {
     ir_percent: (t.irPercent===''||t.irPercent==null)?null:Number(t.irPercent),
     repasse_percent: (t.repassePercent===''||t.repassePercent==null)?null:Number(t.repassePercent),
     services: (t.services && t.services.length) ? t.services : null,
-    pix_key: t.pixKey || null,
   }),
   merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
 };
@@ -493,7 +492,6 @@ const fromDbRow = {
     irPercent: r.ir_percent==null?'':r.ir_percent,
     repassePercent: r.repasse_percent==null?'':r.repasse_percent,
     services: r.services || [],
-    pixKey: r.pix_key || '',
   }),
   merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
 };
@@ -1503,14 +1501,13 @@ function pageRecorrentes(){
 }
 function openParceiraModal(id){
   const tpl = id ? DB.templates.find(x=>x.id===id) : null;
-  const t = tpl ? {...tpl} : {id:null, type:'receita', title:'', category:'c-paciente', billingMode:'parceira', sessionRate:'', pixKey:'', paymentMethod:'pix', recurring:false, services:[], irPercent:'', repassePercent:''};
+  const t = tpl ? {...tpl} : {id:null, type:'receita', title:'', category:'c-paciente', billingMode:'parceira', sessionRate:'', paymentMethod:'pix', recurring:false, services:[], irPercent:'', repassePercent:''};
   openModal(`
     <div class="modal" style="max-width:400px;">
       <div class="modal-head"><h3>${t.id?'Editar':'Nova'} parceira</h3><button class="close-x" onclick="closeModal()">✕</button></div>
       <div class="modal-body">
         <div class="field"><label>Nome</label><input class="input full" id="f_pcName" value="${esc(t.title)}" placeholder="Ex: Dra. Foco, Dr. Silva..."></div>
         <div class="field"><label>Valor do atendimento</label><input class="input full" id="f_pcRate" type="number" step="0.01" value="${t.sessionRate}" placeholder="Ex: 500,00"></div>
-        <div class="field"><label>Pix</label><input class="input full" id="f_pcPix" value="${esc(t.pixKey||'')}" placeholder="Chave Pix pra repasse"></div>
       </div>
       <div class="modal-foot">
         ${t.id?`<button class="btn btn-danger-ghost" onclick="deleteTemplate('${t.id}')">Excluir</button>`:''}
@@ -1524,13 +1521,12 @@ function openParceiraModal(id){
 function saveParceira(id){
   const nome = document.getElementById('f_pcName').value.trim();
   const rate = parseFloat(document.getElementById('f_pcRate').value);
-  const pix = document.getElementById('f_pcPix').value.trim();
   if(!nome){ toast('Informe o nome da parceira','danger'); return; }
   if(!rate || rate<=0){ toast('Informe o valor do atendimento','danger'); return; }
   const existing = id ? DB.templates.find(x=>x.id===id) : null;
   const obj = {
     id: id||uid(), type:'receita', title:nome, category:'c-paciente', billingMode:'parceira',
-    sessionRate:rate, pixKey:pix, paymentMethod: existing?existing.paymentMethod:'pix', cardId: existing?existing.cardId:'',
+    sessionRate:rate, paymentMethod: existing?existing.paymentMethod:'pix', cardId: existing?existing.cardId:'',
     recurring:false, services:[], irPercent: existing?existing.irPercent:'', repassePercent: existing?existing.repassePercent:'', defaultAmount:'',
   };
   const idx = DB.templates.findIndex(x=>x.id===obj.id);
@@ -1811,7 +1807,7 @@ function pageRepasses(){
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div>
               <div style="font-weight:700; font-size:14px;">🤝 ${esc(tpl.title)}</div>
-              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${rateInfo}${tpl.pixKey?' · Pix: '+esc(tpl.pixKey):''}${tpl.repassePercent?' · repasse '+tpl.repassePercent+'%':''}</div>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${rateInfo}${tpl.repassePercent?' · repasse '+tpl.repassePercent+'%':''}</div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Total de repasse — ${periodLabel}</div>
