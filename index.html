@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-comparativo-mes-anterior';
+const APP_VERSION = '2026.07.24-comparativo-invertido-saldo';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -2069,22 +2069,33 @@ function pageRelatoriosGeral(){
       const mkAtual = state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0');
       const mesAnteriorDate = shiftMonthDate(state.month,-1);
       const mkAnterior = mesAnteriorDate.getFullYear()+'-'+String(mesAnteriorDate.getMonth()+1).padStart(2,'0');
-      const totalAtual = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && txMonthKey(t)===mkAtual).reduce((s,t)=>s+t.amount,0);
-      const totalAnterior = DB.tx.filter(t=>t.type==='despesa' && t.amount>0 && txMonthKey(t)===mkAnterior).reduce((s,t)=>s+t.amount,0);
-      const temAnterior = totalAnterior>0;
-      const variacao = temAnterior ? ((totalAtual-totalAnterior)/totalAnterior*100) : null;
-      const subiu = variacao!=null && variacao>0.5;
-      const desceu = variacao!=null && variacao<-0.5;
-      return `<div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; animation:fadeIn .25s ease;">
-        <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">Despesas em ${monthLabel(state.month)}</div><div style="font-family:var(--mono); font-size:19px; font-weight:700;">${fmtBRL(totalAtual)}</div></div>
-        ${temAnterior ? `
-        <div style="font-size:20px; color:var(--text-faint);">→</div>
-        <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">vs. ${monthLabel(mesAnteriorDate)}</div><div style="font-family:var(--mono); font-size:14px; color:var(--text-muted);">${fmtBRL(totalAnterior)}</div></div>
-        <div style="padding:6px 12px; border-radius:20px; font-weight:700; font-size:13px; background:${subiu?'var(--danger-tint)':desceu?'var(--primary-tint)':'var(--surface-2)'}; color:${subiu?'var(--danger)':desceu?'var(--primary-dark)':'var(--text-muted)'};">
-          ${subiu?'▲':desceu?'▼':'●'} ${Math.abs(variacao).toFixed(1)}% ${subiu?'a mais':desceu?'a menos':'igual'}
-        </div>
-        ` : `<span style="font-size:12px; color:var(--text-faint);">sem dados do mês anterior pra comparar</span>`}
-      </div>`;
+      const despAtual = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===mkAtual).reduce((s,t)=>s+t.amount,0);
+      const despAnterior = DB.tx.filter(t=>t.type==='despesa' && txMonthKey(t)===mkAnterior).reduce((s,t)=>s+t.amount,0);
+      const recAtual = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t)===mkAtual).reduce((s,t)=>s+netReceita(t),0);
+      const recAnterior = DB.tx.filter(t=>t.type==='receita' && t.amount>0 && txMonthKey(t)===mkAnterior).reduce((s,t)=>s+netReceita(t),0);
+      const saldoAtual = recAtual - despAtual;
+      const saldoAnterior = recAnterior - despAnterior;
+      const temAnterior = despAnterior>0 || recAnterior>0;
+
+      const renderComparativo = (label, valAnterior, valAtual, invertColor)=>{
+        const variacao = valAnterior!==0 ? ((valAtual-valAnterior)/Math.abs(valAnterior)*100) : null;
+        const subiu = variacao!=null && variacao>0.5;
+        const desceu = variacao!=null && variacao<-0.5;
+        const subiuEhRuim = !invertColor; // pra despesas, subir e ruim (vermelho); pra saldo, subir e bom (verde)
+        const corSubiu = subiuEhRuim ? 'var(--danger)' : 'var(--primary-dark)';
+        const tintSubiu = subiuEhRuim ? 'var(--danger-tint)' : 'var(--primary-tint)';
+        const corDesceu = subiuEhRuim ? 'var(--primary-dark)' : 'var(--danger)';
+        const tintDesceu = subiuEhRuim ? 'var(--primary-tint)' : 'var(--danger-tint)';
+        return `<div class="card card-pad" style="margin-bottom:16px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; animation:fadeIn .25s ease;">
+          <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">${label} em ${monthLabel(mesAnteriorDate)}</div><div style="font-family:var(--mono); font-size:14px; color:var(--text-muted);">${fmtBRL(valAnterior)}</div></div>
+          <div style="font-size:20px; color:var(--text-faint);">→</div>
+          <div><div style="font-size:10px; color:var(--text-faint); text-transform:uppercase; font-weight:700;">${label} em ${monthLabel(state.month)}</div><div style="font-family:var(--mono); font-size:19px; font-weight:700;">${fmtBRL(valAtual)}</div></div>
+          ${temAnterior ? `<div style="padding:6px 12px; border-radius:20px; font-weight:700; font-size:13px; background:${subiu?tintSubiu:desceu?tintDesceu:'var(--surface-2)'}; color:${subiu?corSubiu:desceu?corDesceu:'var(--text-muted)'};">
+            ${subiu?'▲':desceu?'▼':'●'} ${variacao!=null?Math.abs(variacao).toFixed(1)+'%':'—'} ${subiu?'a mais':desceu?'a menos':'igual'}
+          </div>` : `<span style="font-size:12px; color:var(--text-faint);">sem dados do mês anterior pra comparar</span>`}
+        </div>`;
+      };
+      return renderComparativo('Despesas', despAnterior, despAtual, false) + renderComparativo('Saldo', saldoAnterior, saldoAtual, true);
     })() : ''}
 
     <div class="section-title" style="margin-top:4px;">
