@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-fix-parceiras-e-vencimento';
+const APP_VERSION = '2026.07.24-default-mes-atual';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -364,7 +364,8 @@ let state = {
   editing:null,
   importStep:0, importRows:[], importRawText:'', importCardId:null,
   selectedTx: new Set(),
-  txMonthFilterOn: false,
+  txMonthFilterOn: true,
+  relatorioPeriodo: 'mes',
   mobileNavOpen: false,
   treeDrill: null,
 };
