@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-comparativo-invertido-saldo';
+const APP_VERSION = '2026.07.24-fix-parceiras-e-vencimento';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -459,6 +459,7 @@ const toDbRow = {
     ir_percent: (t.irPercent===''||t.irPercent==null)?null:Number(t.irPercent),
     repasse_percent: (t.repassePercent===''||t.repassePercent==null)?null:Number(t.repassePercent),
     services: (t.services && t.services.length) ? t.services : null,
+    due_day: (t.dueDay===''||t.dueDay==null)?null:Number(t.dueDay),
   }),
   merchantRules: m => ({ id:m.id, pattern:m.pattern, category:m.category, type:m.type||'despesa' }),
   saqueBaixas: s => ({ id:s.id, paciente:s.paciente, mes:s.mes }),
@@ -492,6 +493,7 @@ const fromDbRow = {
     irPercent: r.ir_percent==null?'':r.ir_percent,
     repassePercent: r.repasse_percent==null?'':r.repasse_percent,
     services: r.services || [],
+    dueDay: r.due_day==null?'':r.due_day,
   }),
   merchantRules: r => ({ id:r.id, pattern:r.pattern, category:r.category, type:r.type||'despesa' }),
   saqueBaixas: r => ({ id:r.id, paciente:r.paciente, mes:r.mes, dataBaixa:r.data_baixa||'' }),
@@ -975,7 +977,7 @@ function pagePainel(){
 
     ${(()=>{
       const usedDescsThisMonth = txMes.map(t=>normalizeMerchant(t.description));
-      const pendentes = DB.templates.filter(tpl => !usedDescsThisMonth.some(d=>d.includes(normalizeMerchant(tpl.title))));
+      const pendentes = DB.templates.filter(tpl => tpl.billingMode!=='parceira' && !usedDescsThisMonth.some(d=>d.includes(normalizeMerchant(tpl.title))));
       if(DB.templates.length===0) return '';
       const pendR = pendentes.filter(t=>t.type==='receita');
       const pendD = pendentes.filter(t=>t.type==='despesa');
@@ -1479,7 +1481,7 @@ function pageCartaoExtrato(){
 /* ============================ RECORRENTES (lançamentos pré-cadastrados) ============================ */
 function pageRecorrentes(){
   const tab = state.tplTab || 'despesa';
-  const list = DB.templates.filter(t=>t.type===tab);
+  const list = DB.templates.filter(t=>t.type===tab && t.billingMode!=='parceira');
   return `
     <div class="page-head">
       <div><h1>Recorrentes</h1><p>Pré-cadastre pacientes, contas fixas e outros lançamentos recorrentes para lançar em 1 clique</p></div>
@@ -1542,7 +1544,7 @@ function saveParceira(id){
 }
 function openTemplateModal(id){
   const t = id ? DB.templates.find(x=>x.id===id) : null;
-  state.editing = t ? {...t, services: (t.services||[]).map(s=>({...s}))} : {id:null, type:state.tplTab||'despesa', title:'', category:'', defaultAmount:'', paymentMethod:'pix', cardId:'', recurring:true, billingMode:'fixo', sessionRate:'', irPercent:'', repassePercent:'', services:[]};
+  state.editing = t ? {...t, services: (t.services||[]).map(s=>({...s}))} : {id:null, type:state.tplTab||'despesa', title:'', category:'', defaultAmount:'', paymentMethod:'pix', cardId:'', recurring:true, billingMode:'fixo', sessionRate:'', irPercent:'', repassePercent:'', services:[], dueDay:''};
   renderTemplateModal();
 }
 function renderTemplateModal(){
@@ -1570,6 +1572,9 @@ function renderTemplateModal(){
 
         ${(t.type==='despesa' || bm==='fixo') ? `
         <div class="field"><label>Valor padrão (opcional)</label><input class="input full" id="f_tplamount" type="number" step="0.01" value="${t.defaultAmount}" placeholder="deixe em branco se variar"></div>
+        ` : ''}
+        ${t.type==='despesa' ? `
+        <div class="field"><label>Dia de vencimento (opcional, pra aparecer no alerta)</label><input class="input full" id="f_tplDueDay" type="number" min="1" max="31" value="${t.dueDay}" placeholder="Ex: 10"></div>
         ` : ''}
 
         ${(t.type==='receita' && bm==='atendimento') ? `
@@ -1628,6 +1633,7 @@ function saveTemplate(){
     paymentMethod: pm, cardId: pm==='cartao' ? document.getElementById('f_tplcard').value : '',
     recurring: document.getElementById('f_tplrecurring').checked,
     billingMode: bm, defaultAmount:'', sessionRate:'', irPercent:'', repassePercent:'', services:[],
+    dueDay: t.type==='despesa' ? (parseInt(document.getElementById('f_tplDueDay')?.value)||'') : '',
   };
   if(bm==='fixo'){
     obj.defaultAmount = parseFloat(document.getElementById('f_tplamount').value)||'';
@@ -2521,10 +2527,10 @@ function renderTxModal(){
           <button class="${t.type==='despesa'?'on':''}" onclick="switchTxType('despesa')">↘ Despesa</button>
           <button class="${t.type==='receita'?'on':''}" onclick="switchTxType('receita')">↗ Receita</button>
         </div></div>
-        ${(!t.id && DB.templates.filter(x=>x.type===t.type).length>0 && t.category!=='c-paciente') ? `
+        ${(!t.id && DB.templates.filter(x=>x.type===t.type && x.billingMode!=='parceira').length>0 && t.category!=='c-paciente') ? `
         <div class="field"><label>Lançamento rápido (opcional)</label><select class="select full" id="f_quickTpl" onchange="applyTemplate(this.value)">
           <option value="">— escolher da lista de recorrentes —</option>
-          ${DB.templates.filter(x=>x.type===t.type).map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
+          ${DB.templates.filter(x=>x.type===t.type && x.billingMode!=='parceira').map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('')}
         </select></div>
         ` : ''}
         ${(!t.id && t.type==='receita' && t.category!=='c-paciente' && DB.templates.filter(x=>x.type==='receita' && (x.billingMode==='atendimento'||x.billingMode==='multiplo')).length>0) ? `
@@ -2547,6 +2553,13 @@ function renderTxModal(){
   `);
 }
 function switchTxType(type){ state.editing.type = type; renderTxModal(); }
+function computeDueDateFromDay(dueDay){
+  if(!dueDay) return '';
+  const today = new Date(); today.setHours(0,0,0,0);
+  let due = new Date(today.getFullYear(), today.getMonth(), dueDay);
+  if(due < today) due = new Date(today.getFullYear(), today.getMonth()+1, dueDay);
+  return due.getFullYear()+'-'+String(due.getMonth()+1).padStart(2,'0')+'-'+String(due.getDate()).padStart(2,'0');
+}
 function quickLogTemplate(id){
   const tpl = DB.templates.find(x=>x.id===id);
   if(!tpl) return;
@@ -2559,7 +2572,7 @@ function quickLogTemplate(id){
       date: new Date().toISOString().slice(0,10), status: 'pendente', paymentMethod: tpl.paymentMethod||'pix',
       cardId: tpl.paymentMethod==='cartao' ? tpl.cardId : '', installmentCurrent:'', installmentTotal:'',
       invoiceMonth: tpl.paymentMethod==='cartao' ? (state.month.getFullYear()+'-'+String(state.month.getMonth()+1).padStart(2,'0')) : '',
-      recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
+      recurring: !!tpl.recurring, dueDate: tpl.type==='despesa' ? computeDueDateFromDay(tpl.dueDay) : '', notes:'', createdAt:new Date().toISOString(),
     };
     if(tpl.type==='receita'){ obj.taxPercent=0; obj.repasseAmount=0; }
     DB.tx.push(obj);
@@ -2718,6 +2731,7 @@ function applyTemplate(id){
   t.paymentMethod = tpl.paymentMethod;
   t.cardId = tpl.cardId;
   t.recurring = tpl.recurring;
+  if(tpl.type==='despesa' && tpl.dueDay) t.dueDate = computeDueDateFromDay(tpl.dueDay);
   renderTxModal();
 }
 function toggleCardFields(){ document.getElementById('cardFields').style.display = document.getElementById('f_pm').value==='cartao'?'block':'none'; }
