@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-default-mes-atual';
+const APP_VERSION = '2026.07.24-fix-campos-somem';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -2442,19 +2442,19 @@ function openTxModal(id, presetType){
 }
 function renderGenericTxFields(t, cats){
   return `
-    <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..."></div>
+    <div class="field"><label>Descrição</label><input class="input full" id="f_desc" value="${esc(t.description)}" placeholder="Ex: Mercado Livre, Salário, Aluguel..." oninput="state.editing.description=this.value;"></div>
     <div class="row2">
       <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>Valor (R$)</label><input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()"></div>
+      <div class="field"><label>Valor (R$)</label><input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="state.editing.amount=this.value; updateNetPreview();"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>Data</label><input class="input full" id="f_date" type="date" value="${t.date}"></div>
-      <div class="field"><label>Status</label><select class="select full" id="f_status">
+      <div class="field"><label>Data</label><input class="input full" id="f_date" type="date" value="${t.date}" onchange="state.editing.date=this.value;"></div>
+      <div class="field"><label>Status</label><select class="select full" id="f_status" onchange="state.editing.status=this.value;">
         <option value="pago" ${t.status==='pago'?'selected':''}>${t.type==='receita'?'Recebido':'Pago'}</option>
         <option value="pendente" ${t.status==='pendente'?'selected':''}>Pendente</option>
       </select></div>
     </div>
-    <div class="field"><label>Forma de pagamento</label><select class="select full" id="f_pm" onchange="toggleCardFields()">
+    <div class="field"><label>Forma de pagamento</label><select class="select full" id="f_pm" onchange="state.editing.paymentMethod=this.value; toggleCardFields();">
       <option value="pix" ${t.paymentMethod==='pix'?'selected':''}>Pix</option>
       <option value="cartao" ${t.paymentMethod==='cartao'?'selected':''}>Cartão de crédito</option>
       <option value="dinheiro" ${t.paymentMethod==='dinheiro'?'selected':''}>Dinheiro</option>
@@ -2462,17 +2462,17 @@ function renderGenericTxFields(t, cats){
     </select></div>
     <div id="cardFields" style="display:${t.paymentMethod==='cartao'?'block':'none'}">
       <div class="row3">
-        <div class="field" style="grid-column:span 1"><label>Cartão</label><select class="select full" id="f_card">${DB.cards.map(c=>`<option value="${c.id}" ${t.cardId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
-        <div class="field"><label>Parcela atual</label><input class="input full" id="f_installCur" type="number" min="1" value="${t.installmentCurrent}"></div>
-        <div class="field"><label>Total de parcelas</label><input class="input full" id="f_installTot" type="number" min="1" value="${t.installmentTotal}"></div>
+        <div class="field" style="grid-column:span 1"><label>Cartão</label><select class="select full" id="f_card" onchange="state.editing.cardId=this.value;">${DB.cards.map(c=>`<option value="${c.id}" ${t.cardId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Parcela atual</label><input class="input full" id="f_installCur" type="number" min="1" value="${t.installmentCurrent}" oninput="state.editing.installmentCurrent=this.value;"></div>
+        <div class="field"><label>Total de parcelas</label><input class="input full" id="f_installTot" type="number" min="1" value="${t.installmentTotal}" oninput="state.editing.installmentTotal=this.value;"></div>
       </div>
-      <div class="field"><label>Mês da fatura (pode ser diferente da data da compra)</label><input class="input full" id="f_invoiceMonth" type="month" value="${t.invoiceMonth||t.date.slice(0,7)}"></div>
+      <div class="field"><label>Mês da fatura (pode ser diferente da data da compra)</label><input class="input full" id="f_invoiceMonth" type="month" value="${t.invoiceMonth||t.date.slice(0,7)}" onchange="state.editing.invoiceMonth=this.value;"></div>
     </div>
-    <div class="field"><label class="checkline"><input type="checkbox" id="f_recurring" ${t.recurring?'checked':''}> Despesa/receita fixa (recorrente)</label></div>
-    <div class="field"><label>Vencimento (opcional, para aparecer em "Próximos Vencimentos")</label><input class="input full" id="f_due" type="date" value="${t.dueDate||''}"></div>
+    <div class="field"><label class="checkline"><input type="checkbox" id="f_recurring" ${t.recurring?'checked':''} onchange="state.editing.recurring=this.checked;"> Despesa/receita fixa (recorrente)</label></div>
+    <div class="field"><label>Vencimento (opcional, para aparecer em "Próximos Vencimentos")</label><input class="input full" id="f_due" type="date" value="${t.dueDate||''}" onchange="state.editing.dueDate=this.value;"></div>
     ${t.type==='receita'? `
     <div class="hint-box">Se essa receita tem imposto retido, preencha abaixo para calcular o valor líquido.</div>
-    <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
+    <div class="field"><label>Imposto (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="state.editing.taxPercent=this.value; updateNetPreview();"></div>
     <div class="net-preview" id="netPreview" style="margin-top:12px;">Valor líquido: <b>${fmtBRL(netReceita(t))}</b></div>
     ` : ''}
   `;
@@ -2483,7 +2483,7 @@ function renderAtendimentoFields(t, cats){
   return `
     <div class="row2">
       <div class="field"><label>Categoria</label><select class="select full" id="f_cat" onchange="state.editing.category=this.value; renderTxModal();">${cats.map(c=>`<option value="${c.id}" ${t.category===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>Status</label><select class="select full" id="f_status">
+      <div class="field"><label>Status</label><select class="select full" id="f_status" onchange="state.editing.status=this.value;">
         <option value="pago" ${t.status==='pago'?'selected':''}>Recebido</option>
         <option value="pendente" ${t.status==='pendente'?'selected':''}>Pendente</option>
       </select></div>
@@ -2493,14 +2493,14 @@ function renderAtendimentoFields(t, cats){
       ${getPacienteTemplates().map(pt=>`<option value="${pt.id}" ${state.editingPacienteTplId===pt.id?'selected':''}>${esc(pt.title)} (${fmtBRL(pt.sessionRate)}/atend.)</option>`).join('')}
       <option value="__avulso__" ${isAvulso?'selected':''}>➕ Paciente avulso (digitar nome)</option>
     </select></div>
-    ${isAvulso ? `<div class="field"><label>Nome do paciente avulso</label><input class="input full" id="f_pacienteAvulsoNome" value="${esc(t.description)}" placeholder="Digite o nome" oninput="document.getElementById('f_desc').value=this.value;"></div>` : ''}
+    ${isAvulso ? `<div class="field"><label>Nome do paciente avulso</label><input class="input full" id="f_pacienteAvulsoNome" value="${esc(t.description)}" placeholder="Digite o nome" oninput="state.editing.description=this.value; document.getElementById('f_desc').value=this.value;"></div>` : ''}
     <input type="hidden" id="f_desc" value="${esc(t.description)}">
     <div class="row2">
       <div class="field"><label>Quantidade de atendimentos</label><select class="select full" id="f_pacienteQtd" onchange="applyPacienteQtd()">
         ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${(state.editingPacienteQtd||1)===n?'selected':''}>${n}</option>`).join('')}
       </select></div>
       <div class="field"><label>Valor Bruto (R$)</label>${isAvulso
-        ? `<input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="updateNetPreview()">`
+        ? `<input class="input full" id="f_amount" type="number" step="0.01" value="${t.amount}" placeholder="0,00" oninput="state.editing.amount=this.value; updateNetPreview();">`
         : `<div class="input full" style="background:var(--surface-2); display:flex; align-items:center; font-family:var(--mono); font-weight:700;">${fmtBRL(bruto)}</div><input type="hidden" id="f_amount" value="${t.amount}">`}
       </div>
     </div>
@@ -2508,7 +2508,7 @@ function renderAtendimentoFields(t, cats){
     <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
     <button class="btn btn-sm btn-outline" style="margin-top:6px; margin-bottom:14px;" onclick="addParceiraRow()">+ Adicionar parceira</button>
     <div class="row2">
-      <div class="field"><label>IR (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="updateNetPreview()"></div>
+      <div class="field"><label>IR (%)</label><input class="input full" id="f_tax" type="number" step="0.01" value="${t.taxPercent}" oninput="state.editing.taxPercent=this.value; updateNetPreview();"></div>
       <div class="field"><label>Valor Líquido</label><div class="input full" id="netPreviewBox" style="background:var(--surface-2); display:flex; align-items:center; font-family:var(--mono); font-weight:700; color:var(--primary-dark);">${fmtBRL(netReceita(t))}</div></div>
     </div>
     <input type="hidden" id="f_date" value="${t.date}">
