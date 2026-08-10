@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-ordenar-transacoes';
+const APP_VERSION = '2026.07.24-badge-vencimento';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1162,7 +1162,7 @@ function txRow(t, selectable){
     ${selectable?`<input type="checkbox" style="margin-right:4px; width:16px; height:16px; flex-shrink:0;" ${checked?'checked':''} onchange="toggleTxSelect('${t.id}')">`:''}
     <div class="tx-ic ${(t.type==='receita'||isCredit)?'in':'out'}">${isCredit?'🔄':(c?c.icon:(t.type==='receita'?'💰':'🧾'))}</div>
     <div class="tx-main">
-      <div class="tx-title-row"><span class="tx-title">${esc(t.description)}</span>${isCredit?'<span class="badge badge-fixa">Estorno/Crédito</span>':''}${t.recurring?'<span class="badge badge-fixa">Fixa</span>':''}${t.installmentTotal?`<span class="badge badge-parcela">${t.installmentCurrent}/${t.installmentTotal}</span>`:''}${t.status==='pendente'?'<span class="badge badge-pendente">Pendente</span>':t.status==='pago'?'<span class="badge badge-pago">Pago</span>':''}</div>
+      <div class="tx-title-row"><span class="tx-title">${esc(t.description)}</span>${isCredit?'<span class="badge badge-fixa">Estorno/Crédito</span>':''}${t.recurring?'<span class="badge badge-fixa">Fixa</span>':''}${t.installmentTotal?`<span class="badge badge-parcela">${t.installmentCurrent}/${t.installmentTotal}</span>`:''}${t.dueDate?`<span class="badge" style="background:var(--warning-tint); color:var(--warning);">Vence ${fmtDateShort(t.dueDate)}</span>`:''}${t.status==='pendente'?'<span class="badge badge-pendente">Pendente</span>':t.status==='pago'?'<span class="badge badge-pago">Pago</span>':''}</div>
       <div class="tx-sub">${parts.join(' · ')}</div>
     </div>
     <div class="tx-amt ${displayAmt>=0?'up':'down'}">${displayAmt>=0?'+':''}${fmtBRL(displayAmt)}</div>
