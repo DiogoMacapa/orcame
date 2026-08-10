@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-grafico-despesas-total';
+const APP_VERSION = '2026.07.24-ordenar-transacoes';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1215,7 +1215,26 @@ function getFilteredTxList(scope){
     const q = state.search.toLowerCase();
     list = list.filter(t=> t.description.toLowerCase().includes(q) || (catById(t.category)?.name||'').toLowerCase().includes(q));
   }
-  list.sort((a,b)=>parseISO(b.date)-parseISO(a.date));
+  const sortBy = state.txSortBy || 'data';
+  if(sortBy==='vencimento'){
+    // sem vencimento vai pro fim, o resto ordena do mais proximo pro mais distante
+    list.sort((a,b)=>{
+      if(!a.dueDate && !b.dueDate) return parseISO(b.date)-parseISO(a.date);
+      if(!a.dueDate) return 1;
+      if(!b.dueDate) return -1;
+      return parseISO(a.dueDate)-parseISO(b.dueDate);
+    });
+  } else if(sortBy==='valor'){
+    list.sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
+  } else if(sortBy==='categoria'){
+    list.sort((a,b)=>{
+      const ca = catById(a.category)?.name || 'zzz';
+      const cb = catById(b.category)?.name || 'zzz';
+      return ca.localeCompare(cb, 'pt-BR') || parseISO(b.date)-parseISO(a.date);
+    });
+  } else {
+    list.sort((a,b)=>parseISO(b.date)-parseISO(a.date));
+  }
   return list;
 }
 function toggleTxMonthFilter(){ state.txMonthFilterOn = !state.txMonthFilterOn; renderPage(); }
@@ -1234,6 +1253,12 @@ function renderTxFiltersAndList(scope, opts){
       <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
       <button class="btn btn-sm ${state.txMonthFilterOn?'btn-primary':'btn-outline'}" onclick="toggleTxMonthFilter()">📅 ${state.txMonthFilterOn?'Filtrando por mês':'Todos os períodos'}</button>
       ${state.txMonthFilterOn?monthNav():''}
+      <select class="select" onchange="state.txSortBy=this.value; renderPage();">
+        <option value="data" ${(state.txSortBy||'data')==='data'?'selected':''}>Ordenar: Data</option>
+        <option value="vencimento" ${state.txSortBy==='vencimento'?'selected':''}>Ordenar: Vencimento</option>
+        <option value="valor" ${state.txSortBy==='valor'?'selected':''}>Ordenar: Valor</option>
+        <option value="categoria" ${state.txSortBy==='categoria'?'selected':''}>Ordenar: Categoria</option>
+      </select>
       <select class="select" onchange="state.txFilterType=this.value; renderPage();">
         <option value="todos" ${state.txFilterType==='todos'?'selected':''}>Todos os tipos</option>
         <option value="receita" ${state.txFilterType==='receita'?'selected':''}>Receitas</option>
