@@ -345,7 +345,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-badge-vencimento';
+const APP_VERSION = '2026.07.24-filtro-superfluos';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1203,7 +1203,9 @@ function toggleSelectAllVisible(ids){
 /* ============================ TRANSAÇÕES ============================ */
 function getFilteredTxList(scope){
   let list = [...DB.tx];
-  if(scope==='cartao') list = list.filter(t=>t.paymentMethod==='cartao');
+  if(state.txSuperfluoOnly){
+    list = list.filter(t=>t.type==='despesa' && t.amount>0 && !ESSENTIAL_CATS.includes(t.category) && t.category!=='c-estornos-d');
+  } else if(scope==='cartao') list = list.filter(t=>t.paymentMethod==='cartao');
   else if(scope==='nao-cartao') list = list.filter(t=>t.paymentMethod!=='cartao');
   if(state.txMonthFilterOn) list = list.filter(t=>inSelectedMonth(t, state.month));
   if(state.txFilterType!=='todos') list = list.filter(t=>t.type===state.txFilterType);
@@ -1253,6 +1255,7 @@ function renderTxFiltersAndList(scope, opts){
       <div class="search-inline">🔎<input id="txSearchInline" placeholder="Buscar por descrição ou categoria..." value="${esc(state.search)}" oninput="onSearch(this.value)"></div>
       <button class="btn btn-sm ${state.txMonthFilterOn?'btn-primary':'btn-outline'}" onclick="toggleTxMonthFilter()">📅 ${state.txMonthFilterOn?'Filtrando por mês':'Todos os períodos'}</button>
       ${state.txMonthFilterOn?monthNav():''}
+      <button class="btn btn-sm ${state.txSuperfluoOnly?'btn-primary':'btn-outline'}" onclick="state.txSuperfluoOnly=!state.txSuperfluoOnly; renderPage();" title="Lazer, Marketplace, Vestuário e Outros — inclui cartão de crédito">🎯 ${state.txSuperfluoOnly?'Só supérfluos':'Todos os gastos'}</button>
       <select class="select" onchange="state.txSortBy=this.value; renderPage();">
         <option value="data" ${(state.txSortBy||'data')==='data'?'selected':''}>Ordenar: Data</option>
         <option value="vencimento" ${state.txSortBy==='vencimento'?'selected':''}>Ordenar: Vencimento</option>
@@ -1301,7 +1304,7 @@ function pageTransacoes(){
   const list = getFilteredTxList('nao-cartao');
   return `
     <div class="page-head">
-      <div><h1>Transações</h1><p>${list.length} registro(s) · pix, dinheiro e transferência${state.txMonthFilterOn?' · '+monthLabel(state.month):' · todos os períodos'}</p></div>
+      <div><h1>Transações</h1><p>${list.length} registro(s) · ${state.txSuperfluoOnly?'gastos supérfluos (todas as formas de pagamento, cartão incluso)':'pix, dinheiro e transferência'}${state.txMonthFilterOn?' · '+monthLabel(state.month):' · todos os períodos'}</p></div>
       <div class="head-actions">
         <button class="btn btn-outline" onclick="openDuplicateMonthModal()">📋 Duplicar mês</button>
         <button class="btn btn-primary" onclick="openTxModal(null)">+ Nova</button>
