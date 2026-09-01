@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>orça•me</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{
@@ -21,8 +21,18 @@
   --radius-lg:16px; --radius:12px; --radius-sm:8px;
   --shadow-sm:0 1px 2px rgba(0,0,0,.3);
   --shadow-md:0 8px 20px rgba(0,0,0,.35);
-  --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  --sans:'Manrope',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
+}
+html.theme-light{
+  --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F2F3F1; --border:#D9DBD4;
+  --text:#0A0B08; --text-muted:#55584F; --text-faint:#8A8D82;
+  --primary:#0EA972; --primary-dark:#0B8B5D; --primary-tint:#E5F6EE;
+  --danger:#C0392B; --danger-tint:#FBEAE8;
+  --warning:#B8801F; --warning-tint:#FBF1DE;
+  --info:#2F5EA8; --info-tint:#EAF0FA;
+  --shadow-sm:0 1px 2px rgba(10,11,8,.05);
+  --shadow-md:0 8px 20px rgba(10,11,8,.08);
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 @keyframes fadeIn{from{opacity:0;} to{opacity:1;}}
@@ -345,7 +355,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.07.24-filtro-superfluos';
+const APP_VERSION = '2026.09.01-redesign-fase1-tema';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -604,6 +614,29 @@ async function persist(key){
   return false;
 }
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+
+/* ---- Tema claro/escuro (preferência salva no Supabase, tabela settings) ---- */
+async function loadTheme(){
+  try{
+    const rows = await sbRequest('GET', 'settings', {query:'?key=eq.theme&select=value'});
+    if(rows && rows[0] && rows[0].value) return rows[0].value;
+  }catch(e){ console.error('Falha ao carregar preferência de tema:', e); }
+  return 'light';
+}
+async function saveTheme(val){
+  try{
+    await sbRequest('POST', 'settings', {query:'?on_conflict=key', body:[{key:'theme', value:val}], prefer:'resolution=merge-duplicates,return=minimal'});
+  }catch(e){
+    console.error('Falha ao salvar preferência de tema:', e);
+    toast('Não foi possível salvar a preferência de tema na nuvem', 'danger');
+  }
+}
+function toggleTheme(){
+  const isLight = document.documentElement.classList.toggle('theme-light');
+  const btn = document.getElementById('themeToggleBtn');
+  if(btn) btn.textContent = isLight ? '☀️' : '🌙';
+  saveTheme(isLight ? 'light' : 'dark');
+}
 function getAlerts(){
   const alerts = [];
   DB.tx.filter(t=>t.type==='despesa' && t.status==='pendente' && t.dueDate && t.amount>0).forEach(t=>{
@@ -865,6 +898,7 @@ function render(){
         <div style="flex:1"></div>
         <span class="icon-btn" title="${supa && !usingFallbackStorage ? 'Conectado ao Supabase' : 'Salvando localmente neste navegador'}" style="cursor:default; font-size:14px;">${supa && !usingFallbackStorage ? '🟢' : '🟡'}</span>
         <button class="icon-btn" title="Notificações" onclick="toggleAlertsPanel(event)">🔔${getAlerts().length>0?'<span class="dot-badge"></span>':''}</button>
+        <button class="icon-btn" id="themeToggleBtn" title="Alternar tema" onclick="toggleTheme()">${document.documentElement.classList.contains('theme-light')?'☀️':'🌙'}</button>
         <button class="icon-btn" title="Baixar backup" onclick="exportBackup()">⬇️</button>
       </div>
       <div class="topnav-strip">
@@ -3444,6 +3478,12 @@ document.addEventListener('keydown', function(e){
     await loadAll();
   }catch(e){
     console.error('Falha ao carregar dados:', e);
+  }
+  try{
+    const savedTheme = await loadTheme();
+    if(savedTheme==='light') document.documentElement.classList.add('theme-light');
+  }catch(e){
+    console.error('Falha ao aplicar tema salvo:', e);
   }
   try{
     render();
