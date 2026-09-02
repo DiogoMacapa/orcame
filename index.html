@@ -407,7 +407,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-fix-atalho-despesas-sempre';
+const APP_VERSION = '2026.09.01-fix-repasse-parceira-qtd';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -2769,6 +2769,7 @@ function openAtendimentoModal(id){
   if(!tpl) return;
   const rateIsVariable = (tpl.sessionRate==='' || tpl.sessionRate==null);
   const repasseIsPercent = (tpl.repassePercent!=='' && tpl.repassePercent!=null);
+  state.editingPartnerRows = [{partnerId:'', qty:1}];
   openModal(`
     <div class="modal" style="max-width:420px;">
       <div class="modal-head"><h3>Lançar atendimentos — ${esc(tpl.title)}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
@@ -2784,12 +2785,13 @@ function openAtendimentoModal(id){
           <div class="field"><label>IR (%)</label><input class="input full" id="f_atIr" type="number" step="0.01" value="${tpl.irPercent||0}" oninput="updateAtendimentoPreview('${id}')"></div>
           ${repasseIsPercent ? `
           <div class="field"><label>Repasse (%) do pós-IR</label><input class="input full" id="f_atRepassePct" type="number" step="0.01" value="${tpl.repassePercent}" oninput="updateAtendimentoPreview('${id}')"></div>
-          <input type="hidden" id="f_atRepasse" value="">
-          ` : `
-          <div class="field"><label>Repasse (R$)</label><input class="input full" id="f_atRepasse" type="number" step="0.01" value="0" oninput="updateAtendimentoPreview('${id}')"></div>
-          <input type="hidden" id="f_atRepassePct" value="">
-          `}
+          ` : `<input type="hidden" id="f_atRepassePct" value="">`}
         </div>
+        ${!repasseIsPercent ? `
+        <div class="field" style="margin-top:6px; margin-bottom:0;"><label>Parceiras neste atendimento (opcional)</label></div>
+        <div id="parceiraRowsWrap">${renderParceiraRows()}</div>
+        <button class="btn btn-sm btn-outline" style="margin-top:4px; margin-bottom:12px;" onclick="addParceiraRow()">+ Adicionar parceira</button>
+        ` : ''}
         <div class="field"><label>Data</label><input class="input full" id="f_atDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
         <div class="net-preview" id="atendimentoPreview"></div>
       </div>
@@ -2815,9 +2817,9 @@ function readAtendimentoForm(){
   const rate = parseFloat(document.getElementById('f_atRate').value)||0;
   const irPct = document.getElementById('f_atIr').value;
   const repassePctEl = document.getElementById('f_atRepassePct');
-  const repasseFlatEl = document.getElementById('f_atRepasse');
   const repassePct = (repassePctEl && repassePctEl.value!=='') ? repassePctEl.value : null;
-  return computeAtendimento(qtd, rate, irPct, repassePct, repasseFlatEl?repasseFlatEl.value:0);
+  const partnerTotal = computePartnerRepasses().reduce((s,r)=>s+r.total,0);
+  return computeAtendimento(qtd, rate, irPct, repassePct, partnerTotal);
 }
 function updateAtendimentoPreview(id){
   const r = readAtendimentoForm();
@@ -2833,12 +2835,14 @@ function confirmAtendimento(id){
   if(rate<=0){ toast('Informe o valor do atendimento','danger'); return; }
   const nome = (document.getElementById('f_atName').value||tpl.title).trim();
   const r = readAtendimentoForm();
+  const partnerRepasses = computePartnerRepasses();
   const obj = {
     id: uid(), type:'receita', description: nome+' ('+qtd+' atendimento'+(qtd>1?'s':'')+')', category: tpl.category,
     amount: r.gross, date: document.getElementById('f_atDate').value, status:'pendente',
     paymentMethod: tpl.paymentMethod||'pix', cardId: tpl.paymentMethod==='cartao'?tpl.cardId:'',
     installmentCurrent:'', installmentTotal:'', invoiceMonth:'', recurring: !!tpl.recurring, dueDate:'', notes:'', createdAt:new Date().toISOString(),
     taxPercent: Number(document.getElementById('f_atIr').value)||0, repasseAmount: r.repasse,
+    partnerRepasses: partnerRepasses.length ? partnerRepasses : null,
   };
   DB.tx.push(obj);
   persist('tx').then(()=>{ closeModal(); toast(nome+' lançado — líquido '+fmtBRL(r.liquido)); renderPage(); });
@@ -2945,6 +2949,10 @@ function applyPacienteQtd(){
   }
   updateNetPreview();
 }
+function refreshPartnerPreview(){
+  if(document.getElementById('atendimentoPreview')) updateAtendimentoPreview();
+  else updateNetPreview();
+}
 function renderParceiraRows(){
   const rows = state.editingPartnerRows || [{partnerId:'', qty:1}];
   const options = getParceiraTemplates();
@@ -2952,11 +2960,11 @@ function renderParceiraRows(){
     const tpl = options.find(o=>o.id===r.partnerId);
     const total = tpl ? Number(tpl.sessionRate)*r.qty : 0;
     return `<div class="row3" style="align-items:end; margin-bottom:8px;">
-      <div class="field" style="margin-bottom:0;"><label>Parceira</label><select class="select full" onchange="state.editingPartnerRows[${i}].partnerId=this.value; updateNetPreview();">
+      <div class="field" style="margin-bottom:0;"><label>Parceira</label><select class="select full" onchange="state.editingPartnerRows[${i}].partnerId=this.value; refreshPartnerPreview();">
         <option value="">— selecione —</option>
         ${options.map(o=>`<option value="${o.id}" ${r.partnerId===o.id?'selected':''}>${esc(o.title)} (${fmtBRL(o.sessionRate)})</option>`).join('')}
       </select></div>
-      <div class="field" style="margin-bottom:0;"><label>Qtd. atendimentos</label><select class="select full" onchange="state.editingPartnerRows[${i}].qty=parseInt(this.value); updateNetPreview();">
+      <div class="field" style="margin-bottom:0;"><label>Qtd. atendimentos</label><select class="select full" onchange="state.editingPartnerRows[${i}].qty=parseInt(this.value); refreshPartnerPreview();">
         ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${r.qty===n?'selected':''}>${n}</option>`).join('')}
       </select></div>
       <div class="field" style="margin-bottom:0; display:flex; gap:6px;">
@@ -2970,12 +2978,12 @@ function addParceiraRow(){
   state.editingPartnerRows = state.editingPartnerRows || [];
   state.editingPartnerRows.push({partnerId:'', qty:1});
   document.getElementById('parceiraRowsWrap').innerHTML = renderParceiraRows();
-  updateNetPreview();
+  refreshPartnerPreview();
 }
 function removeParceiraRow(i){
   state.editingPartnerRows.splice(i,1);
   document.getElementById('parceiraRowsWrap').innerHTML = renderParceiraRows();
-  updateNetPreview();
+  refreshPartnerPreview();
 }
 function computePartnerRepasses(){
   const rows = state.editingPartnerRows || [];
