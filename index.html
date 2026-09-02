@@ -407,7 +407,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-redesign-fase2-painel-menu';
+const APP_VERSION = '2026.09.01-fix-recorrentes-atalho';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1106,6 +1106,27 @@ function pagePainel(){
       <div class="card stat-card"><div class="stat-top"><span class="ic" style="background:var(--warning-tint);color:#A6720F">◆</span>RECEITA BRUTA</div><div class="stat-value">${fmtBRL(totalReceitas)}</div><div class="stat-sub">${receitas.length} lançamento(s), antes de IR/repasses</div></div>
     </div>
 
+    ${(()=>{
+      if(DB.templates.length===0) return '';
+      const pendR = pendentesTpl.filter(t=>t.type==='receita');
+      const pendD = pendentesTpl.filter(t=>t.type==='despesa');
+      const renderGroup = (list)=> list.length===0 ? '' : `<div class="grid g3" style="gap:8px;">
+        ${list.map(tpl=>{ const c=catById(tpl.category);
+          return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px; border:1px solid var(--border); border-radius:9px;">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;"><span>${c?c.icon:(tpl.type==='receita'?'💰':'🧾')}</span><span style="font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(tpl.title)}</span></div>
+            <button class="btn btn-sm ${tpl.type==='receita'?'btn-outline':'btn-primary'}" onclick="quickLogTemplate('${tpl.id}')">+ Lançar</button>
+          </div>`; }).join('')}
+        </div>`;
+      return `<div class="card card-pad" style="margin-bottom:16px;">
+        <div class="section-title"><h3>Recorrentes deste mês</h3><span class="meta">${pendentesTpl.length} ainda não lançado(s) de ${DB.templates.length}</span></div>
+        ${pendentesTpl.length===0? `<div style="font-size:12.5px; color:var(--primary-dark); padding:8px 0;">🎉 Todos os recorrentes já foram lançados este mês.</div>` : `
+        ${pendR.length>0?`<div style="font-size:11px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">↗ Receitas (${pendR.length})</div>${renderGroup(pendR)}`:''}
+        ${pendR.length>0 && pendD.length>0?'<div style="height:16px;"></div>':''}
+        ${pendD.length>0?`<div style="font-size:11px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">↘ Despesas (${pendD.length})</div>${renderGroup(pendD)}`:''}
+        `}
+      </div>`;
+    })()}
+
     <div class="visual-zone">
       <div class="card card-pad">
         <div class="section-title"><h3>Despesas por Categoria</h3><span class="meta">${monthLabel(m)}</span></div>
@@ -1213,11 +1234,6 @@ function pagePainel(){
     </div>
 
     <div class="lists-zone">
-      ${lcCard('Recorrentes pendentes', pendentesTpl, tpl=>{
-        const c = catById(tpl.category);
-        return `<span style="flex-shrink:0;">${c?c.icon:(tpl.type==='receita'?'💰':'🧾')}</span><span class="nm">${esc(tpl.title)}</span><button class="lc-btn-mini" onclick="quickLogTemplate('${tpl.id}')" title="Lançar">+</button>`;
-      }, {badge: DB.templates.filter(t=>t.billingMode!=='parceira').length>0 ? pendentesTpl.length : null, emptyMsg: DB.templates.length===0?'Nenhum recorrente cadastrado':'Todos já foram lançados 🎉'})}
-
       ${lcCard('Próximos vencimentos', upcoming, u=>{
         const markFn = u.kind==='tx' ? `quickMarkPaid('${u.id}')` : `markCardInvoicePaid('${u.cardId}')`;
         return `<span class="nm">${esc(u.label)}</span><span class="vl down">${fmtBRL(u.value)}</span><button class="lc-btn-mini" onclick="${markFn}" title="Marcar como pago">✓</button>`;
