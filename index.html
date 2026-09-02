@@ -373,12 +373,40 @@ a{color:inherit;}
 <body>
 
 <div class="app" id="app">
-  <div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;">
-    <div style="width:40px; height:40px; border-radius:50%; border:3px solid var(--surface-2); border-top-color:var(--primary); animation:oc-spin .8s linear infinite;"></div>
-    <div style="color:var(--text-faint); font-size:13px;">Carregando orça•me...</div>
+  <div class="oc-loading">
+    <div class="oc-loading-bars"><span></span><span></span><span></span></div>
+    <div class="oc-loading-word">orça<i>•</i>me</div>
+    <div class="oc-loading-caption" id="ocLoadingCaption">Somando os trocados...</div>
   </div>
 </div>
-<style>@keyframes oc-spin{to{transform:rotate(360deg);}}</style>
+<style>
+.oc-loading{ min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+.oc-loading-bars{ display:flex; align-items:flex-end; gap:7px; height:46px; }
+.oc-loading-bars span{ width:11px; border-radius:4px; background:var(--primary); transform-origin:bottom; animation:oc-bar-grow 1.1s ease-in-out infinite; }
+.oc-loading-bars span:nth-child(1){ height:18px; animation-delay:0s; }
+.oc-loading-bars span:nth-child(2){ height:32px; animation-delay:.15s; }
+.oc-loading-bars span:nth-child(3){ height:46px; animation-delay:.3s; }
+@keyframes oc-bar-grow{ 0%,100%{ transform:scaleY(.4); opacity:.5; } 50%{ transform:scaleY(1); opacity:1; } }
+.oc-loading-word{ font-family:var(--sans); font-weight:800; font-size:19px; letter-spacing:-.01em; color:var(--text); }
+.oc-loading-word i{ color:var(--primary); font-style:normal; }
+.oc-loading-caption{ font-size:12.5px; color:var(--text-faint); font-family:var(--mono); min-height:16px; transition:opacity .25s ease; }
+</style>
+<script>
+(function(){
+  var msgs = ['Somando os trocados...','Conferindo os atendimentos...','Organizando os repasses...','Arrumando a casa financeira...','Calculando o saldo do mês...','Alinhando os recorrentes...','Quase lá...'];
+  var i = 0;
+  var iv = setInterval(function(){
+    var el = document.getElementById('ocLoadingCaption');
+    if(!el){ clearInterval(iv); return; }
+    i = (i+1) % msgs.length;
+    el.style.opacity = '0';
+    setTimeout(function(){
+      var el2 = document.getElementById('ocLoadingCaption');
+      if(el2){ el2.textContent = msgs[i]; el2.style.opacity = '1'; }
+    }, 220);
+  }, 1300);
+})();
+</script>
 <div id="toastWrap"></div>
 <div id="ocTooltip"></div>
 
@@ -407,7 +435,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-fix-total-linha-parceira';
+const APP_VERSION = '2026.09.01-loading-criativo';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
