@@ -407,7 +407,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-fix-repasse-parceira-qtd';
+const APP_VERSION = '2026.09.01-fix-total-linha-parceira';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[] };
 function _getInitialPage(){
   try{
@@ -2953,6 +2953,11 @@ function refreshPartnerPreview(){
   if(document.getElementById('atendimentoPreview')) updateAtendimentoPreview();
   else updateNetPreview();
 }
+function updateParceiraRow(i, field, value){
+  state.editingPartnerRows[i][field] = value;
+  document.getElementById('parceiraRowsWrap').innerHTML = renderParceiraRows();
+  refreshPartnerPreview();
+}
 function renderParceiraRows(){
   const rows = state.editingPartnerRows || [{partnerId:'', qty:1}];
   const options = getParceiraTemplates();
@@ -2960,11 +2965,11 @@ function renderParceiraRows(){
     const tpl = options.find(o=>o.id===r.partnerId);
     const total = tpl ? Number(tpl.sessionRate)*r.qty : 0;
     return `<div class="row3" style="align-items:end; margin-bottom:8px;">
-      <div class="field" style="margin-bottom:0;"><label>Parceira</label><select class="select full" onchange="state.editingPartnerRows[${i}].partnerId=this.value; refreshPartnerPreview();">
+      <div class="field" style="margin-bottom:0;"><label>Parceira</label><select class="select full" onchange="updateParceiraRow(${i}, 'partnerId', this.value)">
         <option value="">— selecione —</option>
         ${options.map(o=>`<option value="${o.id}" ${r.partnerId===o.id?'selected':''}>${esc(o.title)} (${fmtBRL(o.sessionRate)})</option>`).join('')}
       </select></div>
-      <div class="field" style="margin-bottom:0;"><label>Qtd. atendimentos</label><select class="select full" onchange="state.editingPartnerRows[${i}].qty=parseInt(this.value); refreshPartnerPreview();">
+      <div class="field" style="margin-bottom:0;"><label>Qtd. atendimentos</label><select class="select full" onchange="updateParceiraRow(${i}, 'qty', parseInt(this.value))">
         ${Array.from({length:30},(_,n)=>n+1).map(n=>`<option value="${n}" ${r.qty===n?'selected':''}>${n}</option>`).join('')}
       </select></div>
       <div class="field" style="margin-bottom:0; display:flex; gap:6px;">
