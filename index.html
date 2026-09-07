@@ -435,7 +435,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-remove-cartoes-tab';
+const APP_VERSION = '2026.09.01-categorias-lado-a-lado';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[], repasseBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1146,6 +1146,7 @@ function pagePainel(){
     })()}
 
     <div class="visual-zone">
+      <div class="grid g2" style="align-items:start;">
       <div class="card card-pad">
         <div class="section-title"><h3>Despesas por Categoria</h3><span class="meta">${monthLabel(m)}</span></div>
         <div style="display:flex; gap:24px; align-items:flex-start;">
@@ -1207,6 +1208,7 @@ function pagePainel(){
                 return `<div class="legend-row"><span class="legend-dot" style="background:${color}"></span><span class="legend-name">${c?c.icon+' '+esc(c.name):'Outros'}</span><span class="legend-pct">${pct.toFixed(1)}%</span><span class="legend-val">${fmtBRL(val)}</span></div>`; }).join('')}
           </div>
         </div>
+      </div>
       </div>
 
       <div class="card card-pad">
