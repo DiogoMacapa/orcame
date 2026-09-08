@@ -139,7 +139,7 @@ a{color:inherit;}
 .legend-dot{width:9px; height:9px; border-radius:3px; flex-shrink:0;}
 .legend-name{flex:1; font-weight:500; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .legend-pct{font-family:var(--mono); font-size:12px; color:var(--text-faint); width:42px; text-align:right;}
-.legend-val{font-family:var(--mono); font-size:13px; font-weight:600; width:92px; text-align:right;}
+.legend-val{font-family:var(--mono); font-size:13px; font-weight:600; width:100px; text-align:right; white-space:nowrap; flex-shrink:0;}
 
 .empty-state{padding:44px 20px; text-align:center; color:var(--text-faint);}
 .empty-state .ic{font-size:30px; margin-bottom:10px;}
@@ -331,9 +331,9 @@ a{color:inherit;}
 .logo-mark{ width:34px; height:34px; flex-shrink:0; border-radius:10px; }
 
 .visual-zone{ display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
-.donuts-row{ display:flex; gap:28px; }
+.donuts-row{ display:flex; gap:18px; }
 .donut-block{ flex:1; display:flex; flex-direction:column; align-items:center; }
-.donut-block .donut-wrap{ width:170px !important; height:170px !important; }
+.donut-block .donut-wrap{ width:140px !important; height:140px !important; }
 .donut-block .donut-wrap svg{ width:100% !important; height:100% !important; }
 .donut-block .cap{ font-size:12px; color:var(--text-muted); margin-top:6px; font-weight:600; }
 .donut-block .legend-wrap{ width:100%; margin-top:14px; text-align:left; }
@@ -435,7 +435,7 @@ const DEFAULT_CATS = [
   {id:'c-estornos', type:'receita', name:'Estornos/Créditos', icon:'🔄'},
 ];
 
-const APP_VERSION = '2026.09.01-fix-alinhamento-cards';
+const APP_VERSION = '2026.09.01-cards-categoria-compactos';
 let DB = { tx:[], cards:[], cats:[], goals:[], templates:[], merchantRules:[], saqueBaixas:[], repasseBaixas:[] };
 function _getInitialPage(){
   try{
@@ -1149,8 +1149,8 @@ function pagePainel(){
       <div class="grid g2">
       <div class="card card-pad">
         <div class="section-title"><h3>Despesas por Categoria</h3><span class="meta">${monthLabel(m)}</span></div>
-        <div style="display:flex; gap:24px; align-items:flex-start;">
-          <div class="donut-block" style="flex:0 0 auto; width:170px;">
+        <div style="display:flex; gap:18px; align-items:flex-start;">
+          <div class="donut-block" style="flex:0 0 auto; width:140px;">
             <div class="donut-wrap" id="chartCatAll" style="width:150px;height:150px;position:relative;"></div>
           </div>
           <div class="legend-wrap" style="flex:1; margin-top:0;">
@@ -1199,7 +1199,7 @@ function pagePainel(){
       <div class="card card-pad">
         <div class="section-title"><h3>Receitas por Categoria</h3><span class="meta">${monthLabel(m)}</span></div>
         <div class="donuts-row">
-          <div class="donut-block" style="flex:0 0 auto; width:170px;">
+          <div class="donut-block" style="flex:0 0 auto; width:140px;">
             <div class="donut-wrap" id="chartCatR" style="width:150px;height:150px;position:relative;"></div>
           </div>
           <div class="legend-wrap" style="flex:1; margin-top:0;">
