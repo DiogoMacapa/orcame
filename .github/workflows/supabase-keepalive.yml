@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Ping Supabase REST API (orça•me)
         run: |
-          curl -sf "https://alrpnvctcooernsdddax.supabase.co/rest/v1/categories?select=id&limit=1" \
+          curl -s "https://alrpnvctcooernsdddax.supabase.co/rest/v1/" \
             -H "apikey: sb_publishable_kszH2B5zQuSOHUZTxSTNHw_Vit34hNT" \
             -o /dev/null -w "HTTP status: %{http_code}\n"
